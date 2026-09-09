@@ -17,3 +17,4 @@ out/
 
 # Archivos generados para análisis local del proyecto
 graphify-out/
+supabase/.temp/
