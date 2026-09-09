@@ -1,0 +1,19 @@
+# Dependencias y compilación
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Variables locales y secretos
+.env*
+!.env.example
+
+# Vercel
+.vercel/
+
+# Sistema y logs
+.DS_Store
+*.log
+
+# Archivos generados para análisis local del proyecto
+graphify-out/
