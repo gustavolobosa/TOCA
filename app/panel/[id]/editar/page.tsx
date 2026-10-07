@@ -2,8 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { SubmitButton } from "@/components/submit-button";
-import { requireAdmin } from "@/lib/auth";
-import type { NfcLink } from "@/lib/types";
+import { getNfc } from "@/lib/data";
+import { DestinationFields } from "@/components/destination-fields";
 
 import { updateNfcLink } from "../../actions";
 
@@ -13,29 +13,19 @@ type EditLinkPageProps = {
 };
 
 export default async function EditLinkPage({ params, searchParams }: EditLinkPageProps) {
-  const [{ id: rawId }, { error }, { supabase, user }] = await Promise.all([
+  const [{ id: rawId }, { error }] = await Promise.all([
     params,
     searchParams,
-    requireAdmin(),
   ]);
   const id = Number(rawId);
 
   if (!Number.isSafeInteger(id) || id < 1) notFound();
 
-  const { data } = await supabase
-    .from("nfc_links")
-    .select("*")
-    .eq("id", id)
-    .eq("owner_id", user.id)
-    .maybeSingle();
-
-  if (!data) notFound();
-
-  const link = data as NfcLink;
+  const link = await getNfc(id);
   const action = updateNfcLink.bind(null, id);
 
   return (
-    <main className="form-page">
+    <main className="form-page" id="main-content">
       <Link className="back-link" href="/panel">Volver al panel</Link>
       <div className="form-heading">
         <p className="section-kicker">Editar NFC</p>
@@ -49,10 +39,9 @@ export default async function EditLinkPage({ params, searchParams }: EditLinkPag
             Nombre del NFC
             <input defaultValue={link.name} maxLength={100} name="name" required />
           </label>
-          <label>
-            URL de destino
-            <input defaultValue={link.destination_url} name="destination_url" required type="url" />
-          </label>
+          {link.requires_configuration && <p className="notice">Este NFC fue reasignado. Configura un destino nuevo antes de activarlo.</p>}
+          <DestinationFields type={link.destination_type} url={link.destination_url} />
+          <label className="checkbox-label"><input type="checkbox" name="is_active" defaultChecked={link.is_active} />NFC activo</label>
           <div className="form-actions">
             <Link className="button button-secondary" href="/panel">Cancelar</Link>
             <SubmitButton pendingLabel="Guardando…">Guardar cambios</SubmitButton>

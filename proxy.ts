@@ -20,9 +20,10 @@ export async function proxy(request: NextRequest) {
   });
 
   await supabase.auth.getUser();
+  response.headers.set("Cache-Control", "private, no-store, max-age=0");
   return response;
 }
 
 export const config = {
-  matcher: ["/panel/:path*", "/ingresar"],
+  matcher: ["/panel/:path*", "/cuenta/:path*", "/ingresar"],
 };

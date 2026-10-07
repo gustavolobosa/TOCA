@@ -1,25 +1,20 @@
 import { redirect } from "next/navigation";
 
 import { SubmitButton } from "@/components/submit-button";
-import { getAdminEmail } from "@/lib/env";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getAccount } from "@/lib/auth";
 
 import { signIn } from "./actions";
 
 type LoginPageProps = {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; password_changed?: string }>;
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const [{ error }, supabase] = await Promise.all([
+  const [{ error, password_changed }, account] = await Promise.all([
     searchParams,
-    createSupabaseServerClient(),
+    getAccount(),
   ]);
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (user?.email?.toLowerCase() === getAdminEmail()) {
+  if (account?.profile.is_active) {
     redirect("/panel");
   }
 
@@ -44,7 +39,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         <div className="login-card">
           <p className="section-kicker">Panel privado</p>
           <h2>Entra a TOCA</h2>
-          <p className="muted">Usa la cuenta administradora de esta prueba.</p>
+          <p className="muted">Usa la cuenta que te entregó el administrador.</p>
+          {password_changed && <p className="notice success" role="status">Contraseña actualizada. Entra con tu nueva contraseña.</p>}
 
           {error ? <div className="form-error" role="alert">{error}</div> : null}
 
@@ -53,7 +49,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               Correo
               <input
                 autoComplete="email"
-                defaultValue={getAdminEmail()}
+                maxLength={254}
                 name="email"
                 required
                 type="email"
@@ -61,7 +57,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             </label>
             <label>
               Contraseña
-              <input autoComplete="current-password" name="password" required type="password" />
+              <input autoComplete="current-password" maxLength={1024} name="password" required type="password" />
             </label>
             <SubmitButton pendingLabel="Entrando…">Entrar</SubmitButton>
           </form>

@@ -2,16 +2,18 @@ import Link from "next/link";
 
 import { SubmitButton } from "@/components/submit-button";
 import { requireAdmin } from "@/lib/auth";
+import { getProfiles } from "@/lib/data";
+import { DestinationFields } from "@/components/destination-fields";
 
 import { createNfcLink } from "../actions";
 
 type NewLinkPageProps = { searchParams: Promise<{ error?: string }> };
 
 export default async function NewLinkPage({ searchParams }: NewLinkPageProps) {
-  const [{ error }] = await Promise.all([searchParams, requireAdmin()]);
+  const [{ error }, , profiles] = await Promise.all([searchParams, requireAdmin(), getProfiles()]);
 
   return (
-    <main className="form-page">
+    <main className="form-page" id="main-content">
       <Link className="back-link" href="/panel">Volver al panel</Link>
       <div className="form-heading">
         <p className="section-kicker">Nuevo NFC</p>
@@ -27,10 +29,12 @@ export default async function NewLinkPage({ searchParams }: NewLinkPageProps) {
             <small>Usa un nombre físico fácil de reconocer.</small>
           </label>
           <label>
-            URL de destino
-            <input name="destination_url" placeholder="https://instagram.com/tu_perfil" required type="url" />
-            <small>Debe comenzar con https://. Puede ser Instagram, TikTok, Google Maps u otro sitio.</small>
+            <span id="owner-label">Propietario</span>
+            <select aria-labelledby="owner-label" name="owner_id" required defaultValue=""><option value="" disabled>Elige un usuario activo</option>
+              {profiles.filter(profile => profile.is_active).map(profile => <option key={profile.id} value={profile.id}>{profile.name} ({profile.email})</option>)}
+            </select>
           </label>
+          <DestinationFields />
           <div className="form-actions">
             <Link className="button button-secondary" href="/panel">Cancelar</Link>
             <SubmitButton pendingLabel="Creando…">Crear enlace</SubmitButton>
