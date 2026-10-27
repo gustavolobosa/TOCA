@@ -52,7 +52,7 @@ export async function updateNfcLink(id: number, formData: FormData) {
       url: destination.destination_url, active: formData.get("is_active") === "on",
     });
 
-    if (error) throw new Error("No pudimos guardar. La cuenta debe estar activa; configura un destino nuevo si el NFC fue reasignado.");
+    if (error) throw new Error("No pudimos guardar. La cuenta debe estar activa; configura un destino nuevo si el NFC tiene una configuración pendiente.");
   } catch (error) {
     formError(`/panel/${id}/editar`, error);
   }
@@ -77,22 +77,6 @@ export async function setNfcLinkActive(id: number, nextActive: boolean) {
   }
 
   revalidatePath("/panel");
-}
-
-export async function reassignNfc(rawId: number, formData: FormData) {
-  const { user } = await requireAdmin();
-  const id = parseId(rawId);
-  await getNfc(id);
-  try {
-    if (formData.get("confirm_transfer") !== "on") throw new Error("Confirma que se transferirá todo el historial al nuevo propietario.");
-    const { error } = await createSupabaseServiceClient().rpc("reassign_nfc", {
-      actor: user.id, tag_id: id, target: parseUserId(formData.get("owner_id")),
-    });
-    if (error) throw new Error("No pudimos reasignar. Elige otro propietario activo.");
-  } catch (error) { formError(`/panel/${id}`, error); }
-  revalidatePath("/panel");
-  revalidatePath(`/panel/${id}`);
-  redirect(`/panel/${id}?transferred=1`);
 }
 
 export async function signOut() {

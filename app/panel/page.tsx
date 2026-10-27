@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { CopyButton } from "@/components/copy-button";
+import { TrafficChart } from "@/components/traffic-chart";
 import { requirePanelAccount } from "@/lib/auth";
 import { getProfiles } from "@/lib/data";
 import { destinationLabel } from "@/lib/destinations";
@@ -14,16 +15,17 @@ import type { NfcLinkSummary } from "@/lib/types";
 import { setNfcLinkActive } from "./actions";
 
 type DashboardProps = {
-  searchParams: Promise<{ created?: string; updated?: string; error?: string; page?: string }>;
+  searchParams: Promise<{ created?: string; updated?: string; error?: string; page?: string; nfc?: string | string[]; type?: string | string[]; days?: string | string[]; group?: string | string[] }>;
 };
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage({ searchParams }: DashboardProps) {
-  const [{ created, updated, error: pageError, page: rawPage }, { supabase, isAdmin }] = await Promise.all([
+  const [query, { supabase, isAdmin }] = await Promise.all([
     searchParams,
     requirePanelAccount(),
   ]);
+  const { created, updated, error: pageError, page: rawPage } = query;
   let page: number;
   try { page = parsePage(rawPage); } catch { notFound(); }
   const { data, error, count } = await supabase
@@ -34,9 +36,15 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
   const owners = isAdmin ? await getProfiles() : [];
   const links = (data ?? []) as NfcLinkSummary[];
   const siteUrl = getSiteUrl();
+  const listPageUrl = (nextPage: number) => {
+    const filters = new URLSearchParams({ page: String(nextPage) });
+    for (const key of ["nfc", "type", "days", "group"] as const) if (typeof query[key] === "string") filters.set(key, query[key]);
+    return `/panel?${filters}`;
+  };
 
   return (
     <main className="panel-main" id="main-content">
+      <TrafficChart filters={query} />
       <section className="panel-heading">
         <div>
           <h1>{isAdmin ? "Todos los NFC" : "Tus NFC"}</h1>
@@ -103,8 +111,8 @@ export default async function DashboardPage({ searchParams }: DashboardProps) {
         </div>
       )}
       <nav className="pagination" aria-label="Páginas de NFC">
-        {page > 0 && <Link href={`/panel?page=${page - 1}`}>Anterior</Link>}
-        {(page + 1) * 50 < (count ?? 0) && <Link href={`/panel?page=${page + 1}`}>Siguiente</Link>}
+        {page > 0 && <Link href={listPageUrl(page - 1)}>Anterior</Link>}
+        {(page + 1) * 50 < (count ?? 0) && <Link href={listPageUrl(page + 1)}>Siguiente</Link>}
       </nav>
       <p className="muted metrics-note">Las visitas son aperturas registradas del enlace, no personas únicas, reseñas publicadas ni mensajes enviados.</p>
     </main>

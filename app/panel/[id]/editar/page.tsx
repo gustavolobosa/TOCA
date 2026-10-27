@@ -39,7 +39,7 @@ export default async function EditLinkPage({ params, searchParams }: EditLinkPag
             Nombre del NFC
             <input defaultValue={link.name} maxLength={100} name="name" required />
           </label>
-          {link.requires_configuration && <p className="notice">Este NFC fue reasignado. Configura un destino nuevo antes de activarlo.</p>}
+          {link.requires_configuration && <p className="notice">Este NFC tiene una configuración pendiente. Configura un destino nuevo antes de activarlo.</p>}
           <DestinationFields type={link.destination_type} url={link.destination_url} />
           <label className="checkbox-label"><input type="checkbox" name="is_active" defaultChecked={link.is_active} />NFC activo</label>
           <div className="form-actions">

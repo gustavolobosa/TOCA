@@ -120,10 +120,6 @@ export async function startFixture() {
         const link = { id: links.length + 1, owner_id: body.target, name: body.title, slug: body.tag_slug, destination_type: body.kind, destination_url: body.url, is_active: true, requires_configuration: false, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
         links.push(link); appendHistory(link); return send(link.id);
       }
-      if (name === "reassign_nfc") {
-        const link = links.find(item => item.id === body.tag_id); if (!link || !profileOf(body.target)?.is_active || link.owner_id === body.target) return fail();
-        Object.assign(link, { owner_id: body.target, is_active: false, requires_configuration: true }); return send(null);
-      }
       if (name === "set_profile_active") {
         const target = profileOf(body.target); if (!target || target.is_admin) return fail();
         target.is_active = body.active;
