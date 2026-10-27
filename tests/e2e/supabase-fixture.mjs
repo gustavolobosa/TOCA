@@ -71,23 +71,8 @@ export async function startFixture() {
       const account = { id: randomUUID(), email: body.email, password: body.password, factors: [] };
       users.push(account); return send(userDto(account));
     }
-    if (url.pathname === "/auth/v1/factors" && req.method === "POST") {
-      if (!user) return fail();
-      const factor = { id: randomUUID(), factor_type: "totp", status: "unverified", friendly_name: "TOCA" };
-      user.factors.push(factor);
-      return send({ ...factor, type: "totp", totp: { qr_code: '<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220"><rect width="220" height="220" fill="white"/><text x="20" y="100">QR de prueba</text></svg>', secret: "FIXTUREONLY", uri: "otpauth://totp/fixture" } });
-    }
-    if (url.pathname.startsWith("/auth/v1/factors/")) {
-      const [, , , , id, step] = url.pathname.split("/");
-      const factor = user?.factors.find(item => item.id === id);
-      if (!factor) return fail();
-      if (req.method === "DELETE") { user.factors = user.factors.filter(item => item.id !== id); return send({}); }
-      if (step === "challenge") return send({ id: randomUUID(), expires_at: Math.floor(Date.now() / 1000) + 60 });
-      if (step === "verify" && body.code === "123456") { factor.status = "verified"; return send(session(user, "aal2")); }
-      return fail("Invalid code", 400);
-    }
     if (!url.pathname.startsWith("/rest/v1/")) return fail("Unexpected fixture endpoint", 404);
-    const panelAccess = profile?.is_active && !profile.must_change_password && claims.iat >= profile.token_valid_after && (!profile.is_admin || claims.aal === "aal2");
+    const panelAccess = profile?.is_active && !profile.must_change_password && claims.iat >= profile.token_valid_after;
     const visible = link => service || (panelAccess && (link.owner_id === user.id || profile.is_admin));
     if (url.pathname.startsWith("/rest/v1/rpc/")) {
       if (!service) return fail();

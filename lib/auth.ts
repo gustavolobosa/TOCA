@@ -35,11 +35,6 @@ export const requireAccount = cache(async function requireAccount() {
 export const requirePanelAccount = cache(async function requirePanelAccount() {
   const account = await requireAccount();
   if (account.profile.must_change_password) redirect("/cuenta/clave");
-  if (account.isAdmin) {
-    // getUser verificó la identidad; AAL y factores deben coincidir, no solo un JWT viejo.
-    const { data, error } = await account.supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (error || data?.currentLevel !== "aal2" || !account.user.factors?.some(factor => factor.status === "verified" && factor.factor_type === "totp")) redirect("/cuenta/seguridad");
-  }
   return account;
 });
 

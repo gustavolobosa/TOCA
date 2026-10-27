@@ -80,7 +80,7 @@ export async function setNfcLinkActive(id: number, nextActive: boolean) {
 }
 
 export async function signOut() {
-  // Salir también debe funcionar con una cuenta desactivada o pendiente de MFA.
+  // Salir también debe funcionar con una cuenta desactivada.
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut({ scope: "local" });
   redirect("/ingresar");

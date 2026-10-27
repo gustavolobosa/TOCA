@@ -62,7 +62,7 @@ El repositorio incluye el MVP multiusuario. Su migración fue aplicada con autor
 
 - Todas las tablas tienen Row Level Security.
 - Cada propietario ve sus NFC y su historial; solo el administrador crea cuentas, crea etiquetas o cambia propietarios. El servidor verifica la sesión, el perfil activo y la propiedad en cada acción.
-- El administrador debe cambiar la contraseña inicial y verificar un segundo factor TOTP; los clientes deben reemplazar su contraseña temporal individual.
+- El administrador y los clientes deben reemplazar su contraseña temporal individual. El panel usa correo y contraseña, sin segundo factor; conserva la validación del perfil activo y la revocación de sesiones.
 - La clave secreta solo se importa desde módulos de servidor.
 - La ruta pública nueva guarda fecha, NFC, destino y tipo, sin IP, user-agent ni identificadores del visitante. Los eventos heredados no se borran. Las visitas no prueban reseñas, personas únicas ni mensajes enviados.
 - Los permisos administrativos se verifican por ID en cada acción; el correo y los datos editables de perfil no otorgan permisos.
@@ -72,6 +72,8 @@ El repositorio incluye el MVP multiusuario. Su migración fue aplicada con autor
 - Las URLs públicas y privadas de Supabase deben apuntar al mismo proyecto.
 
 ## Configuración de producción
+
+Para retirar MFA, aplica `20261027031251_remove_admin_mfa_requirement.sql` antes de publicar el código sin segundo factor. Conserva los controles de perfil y sesión en RLS. Retira también los factores del administrador desde Supabase Auth mediante el Dashboard o la API administrativa (no borres la cuenta ni edites tablas internas de Auth); eliminar un factor verificado cierra sus sesiones. Sin este paso, Supabase puede seguir exigiendo AAL2 al cambiar su contraseña. Esta operación no modifica contraseña, ID, NFC ni historial. No desactives MFA globalmente para otros proyectos o cuentas.
 
 El código local usa `ADMIN_USER_ID`. Antes de desplegar, configura esa variable en Vercel, tanto en Production como en Preview, con el UUID de la cuenta actual. Conserva `NEXT_PUBLIC_SITE_URL=https://toca-one.vercel.app` en Production; no copies la URL local al despliegue.
 
