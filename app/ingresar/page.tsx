@@ -37,7 +37,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
       <section className="login-panel">
         <div className="login-card">
-          <p className="section-kicker">Panel privado</p>
           <h2>Entra a TOCA</h2>
           <p className="muted">Usa la cuenta que te entregó el administrador.</p>
           {password_changed && <p className="notice success" role="status">Contraseña actualizada. Entra con tu nueva contraseña.</p>}

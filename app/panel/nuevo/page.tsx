@@ -16,8 +16,7 @@ export default async function NewLinkPage({ searchParams }: NewLinkPageProps) {
     <main className="form-page" id="main-content">
       <Link className="back-link" href="/panel">Volver al panel</Link>
       <div className="form-heading">
-        <p className="section-kicker">Nuevo NFC</p>
-        <h1>Crea el enlace que irá en la etiqueta</h1>
+        <h1>Agregar NFC</h1>
         <p className="muted">Podrás cambiar el destino después sin reprogramar el NFC.</p>
       </div>
       <section className="editor-card">

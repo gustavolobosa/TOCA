@@ -73,10 +73,11 @@ export async function setNfcLinkActive(id: number, nextActive: boolean) {
   });
 
   if (error) {
-    redirect("/panel?error=No+pudimos+cambiar+el+estado.");
+    return { error: "No pudimos cambiar el estado. Intenta de nuevo." };
   }
 
   revalidatePath("/panel");
+  return {};
 }
 
 export async function signOut() {

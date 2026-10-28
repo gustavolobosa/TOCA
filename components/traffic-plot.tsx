@@ -18,6 +18,7 @@ export function TrafficPlot({ dates, series }: { dates: string[]; series: Traffi
   const container = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
   const [selected, setSelected] = useState(dates.length - 1);
+  const [active, setActive] = useState(false);
   useEffect(() => {
     const element = container.current;
     if (!element) return;
@@ -26,7 +27,7 @@ export function TrafficPlot({ dates, series }: { dates: string[]; series: Traffi
     return () => observer.disconnect();
   }, []);
 
-  const left = 44, right = width - 16, top = 18, bottom = 236;
+  const left = 30, right = width - 12, top = 18, bottom = 182;
   const maximum = Math.max(1, ...series.flatMap(item => item.values));
   const step = Math.max(1, Math.ceil(maximum / 4));
   const ceiling = step * 4;
@@ -36,27 +37,32 @@ export function TrafficPlot({ dates, series }: { dates: string[]; series: Traffi
   const labels = Array.from({ length: labelCount }, (_, index) => Math.round(index * (dates.length - 1) / (labelCount - 1)));
 
   return <>
-    <ul className="traffic-legend" aria-label="Series del gráfico">
+    {series.length > 1 && <ul className="traffic-legend" aria-label="Series del gráfico">
       {series.map(item => <li key={item.id}>
         <i className="traffic-color" style={{ background: item.color }} aria-hidden="true" />
         <span>{item.label}</span><strong>{formatCount(item.values.reduce((sum, value) => sum + value, 0))}</strong>
       </li>)}
-    </ul>
+    </ul>}
     <div ref={container} className="traffic-plot" role="group" tabIndex={0}
       aria-label="Visitas por día. Usa las flechas izquierda y derecha para consultar cada fecha."
       aria-describedby="traffic-day-detail"
+      onFocus={() => setActive(true)} onBlur={() => setActive(false)}
       onKeyDown={event => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
         event.preventDefault();
+        setActive(true);
         setSelected(index => event.key === "Home" ? 0 : event.key === "End" ? dates.length - 1 : Math.max(0, Math.min(dates.length - 1, index + (event.key === "ArrowRight" ? 1 : -1))));
       }}>
-      <svg viewBox={`0 0 ${width} 280`} width="100%" height="280" aria-hidden="true"
+      <svg viewBox={`0 0 ${width} 220`} width="100%" height="220" aria-hidden="true"
+        onPointerLeave={() => { if (document.activeElement !== container.current) setActive(false); }}
         onPointerMove={event => {
           if (event.pointerType !== "mouse") return;
+          setActive(true);
           const bounds = event.currentTarget.getBoundingClientRect();
           setSelected(Math.max(0, Math.min(dates.length - 1, Math.round(((event.clientX - bounds.left) * width / bounds.width - left) / (right - left) * (dates.length - 1)))));
         }}
         onPointerDown={event => {
+          setActive(true);
           const bounds = event.currentTarget.getBoundingClientRect();
           setSelected(Math.max(0, Math.min(dates.length - 1, Math.round(((event.clientX - bounds.left) * width / bounds.width - left) / (right - left) * (dates.length - 1)))));
         }}>
@@ -64,24 +70,23 @@ export function TrafficPlot({ dates, series }: { dates: string[]; series: Traffi
           <line x1={left} x2={right} y1={y(index * step)} y2={y(index * step)} className="traffic-grid" />
           <text x={left - 10} y={y(index * step) + 4} textAnchor="end" className="traffic-axis">{formatCount(index * step)}</text>
         </g>)}
-        {labels.map(index => <text key={index} x={x(index)} y={267} textAnchor={index === 0 ? "start" : index === dates.length - 1 ? "end" : "middle"} className="traffic-axis">{formatDay(dates[index])}</text>)}
-        <line x1={x(selected)} x2={x(selected)} y1={top} y2={bottom} className="traffic-cursor" />
+        {labels.map(index => <text key={index} x={x(index)} y={210} textAnchor={index === 0 ? "start" : index === dates.length - 1 ? "end" : "middle"} className="traffic-axis">{formatDay(dates[index])}</text>)}
+        {active && <line x1={x(selected)} x2={x(selected)} y1={top} y2={bottom} className="traffic-cursor" />}
         {series.map((item, seriesIndex) => <g key={item.id}>
           <polyline points={item.values.map((value, index) => `${x(index)},${y(value)}`).join(" ")}
             fill="none" stroke={item.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"
             strokeDasharray={seriesIndex % 3 === 1 ? "6 4" : seriesIndex % 3 === 2 ? "2 4" : undefined} />
-          {item.values.map((value, index) => value > 0 && index !== selected && <circle key={index} cx={x(index)} cy={y(value)} r={dates.length > 30 ? 2 : 3} fill={item.color} />)}
-          <circle cx={x(selected)} cy={y(item.values[selected])} r="4.5" fill="white" stroke={item.color} strokeWidth="2.5" />
+          {item.values.map((value, index) => value > 0 && (!active || index !== selected) && <circle key={index} cx={x(index)} cy={y(value)} r={dates.length > 30 ? 2 : 3} fill={item.color} />)}
+          {active && <circle cx={x(selected)} cy={y(item.values[selected])} r="4.5" fill="white" stroke={item.color} strokeWidth="2.5" />}
         </g>)}
       </svg>
-    </div>
-    <div id="traffic-day-detail" className="traffic-day-detail" aria-live="polite" aria-atomic="true">
+    <div id="traffic-day-detail" hidden={!active} className="traffic-day-detail" aria-live="polite" aria-atomic="true">
       <time dateTime={dates[selected]}>{formatDay(dates[selected], true)}</time>
       <ul>{series.map(item => <li key={item.id}><i className="traffic-color" style={{ background: item.color }} aria-hidden="true" />
         <span>{item.label}</span><strong>{formatCount(item.values[selected])} {item.values[selected] === 1 ? "visita" : "visitas"}</strong>
       </li>)}</ul>
     </div>
-    <p className="traffic-hint">Pasa el cursor o toca el gráfico para consultar un día. También puedes usar las flechas del teclado.</p>
+    </div>
     <details className="traffic-data">
       <summary>Ver datos diarios</summary>
       <div className="table-scroll"><table>

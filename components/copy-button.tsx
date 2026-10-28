@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Icon } from "@/components/icon";
 
 export function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
@@ -19,8 +20,8 @@ export function CopyButton({ value }: { value: string }) {
   }
 
   return (
-    <><button className="copy-button" onClick={copy} type="button" aria-live="polite">
-      {copied ? "Copiado" : "Copiar"}
-    </button>{error && <span role="alert">No se pudo copiar. Selecciona el texto y cópialo manualmente.</span>}</>
+    <div className="copy-control"><button className="copy-button" onClick={copy} type="button" aria-live="polite">
+      <Icon name="copy" />{copied ? "Enlace copiado" : "Copiar enlace NFC"}
+    </button>{error && <span className="copy-error" role="alert">No se pudo copiar. Abre el detalle para copiar el enlace NFC manualmente.</span>}</div>
   );
 }

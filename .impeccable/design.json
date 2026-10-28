@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-27T00:00:00Z",
+  "title": "Design System: TOCA",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "neutral",
+        "displayName": "ink"
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "paper"
+      },
+      "white": {
+        "role": "neutral",
+        "displayName": "white"
+      },
+      "blue": {
+        "role": "primary",
+        "displayName": "blue"
+      },
+      "blue-dark": {
+        "role": "primary",
+        "displayName": "blue-dark"
+      },
+      "soft-blue": {
+        "role": "neutral",
+        "displayName": "soft-blue"
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "surface"
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "muted"
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "line"
+      },
+      "success": {
+        "role": "semantic",
+        "displayName": "success"
+      },
+      "danger": {
+        "role": "semantic",
+        "displayName": "danger"
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Título principal",
+        "purpose": "Título de cada pantalla."
+      },
+      "body": {
+        "displayName": "Texto de trabajo",
+        "purpose": "Contenido y controles."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "spinner",
+        "value": ".8s linear infinite",
+        "purpose": "Giro solo bajo prefers-reduced-motion: no-preference."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "1200px"
+      },
+      {
+        "name": "mobile",
+        "value": "760px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botón principal",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Acción del panel con foco visible.",
+      "html": "<button class=\"ds-button-primary\">Agregar NFC</button>",
+      "css": ".ds-button-primary{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 16px;border:1px solid transparent;border-radius:6px;font-weight:550;line-height:1.2;cursor:pointer;background:var(--blue,#2458d3);color:var(--white,#fff);}.ds-button-primary:hover{background:var(--blue-dark,#1945ab);}.ds-button-primary:focus-visible{outline:2px solid var(--blue,#2458d3);outline-offset:4px;}.ds-button-primary:disabled{cursor:wait;opacity:.6;}"
+    },
+    {
+      "name": "Botón secundario",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Acción del panel con foco visible.",
+      "html": "<button class=\"ds-button-secondary\">Editar destino</button>",
+      "css": ".ds-button-secondary{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 16px;border:1px solid transparent;border-radius:6px;font-weight:550;line-height:1.2;cursor:pointer;background:var(--white,#fff);color:var(--blue,#2458d3);border-color:#c5d0e0;}.ds-button-secondary:hover{background:var(--soft-blue,#edf3ff);}.ds-button-secondary:focus-visible{outline:2px solid var(--blue,#2458d3);outline-offset:4px;}.ds-button-secondary:disabled{cursor:wait;opacity:.6;}"
+    },
+    {
+      "name": "Acción de texto",
+      "kind": "button",
+      "refersTo": "text-button",
+      "description": "Acción secundaria en línea.",
+      "html": "<button class=\"ds-text-button\">Reintentar</button>",
+      "css": ".ds-text-button{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;display:inline-block;padding:4px 0;border:0;background:transparent;color:var(--blue,#2458d3);font-weight:500;cursor:pointer;}.ds-text-button:hover{text-decoration:underline;}.ds-text-button:focus-visible{outline:2px solid var(--blue,#2458d3);outline-offset:4px;}"
+    },
+    {
+      "name": "Campo",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Campo del editor de NFC.",
+      "html": "<label class=\"ds-field\">Nombre<input class=\"ds-input\" placeholder=\"NFC del local\"></label>",
+      "css": ".ds-field{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;display:grid;gap:8px;color:var(--ink,#172b4d);}.ds-input{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;min-height:44px;padding:10px 12px;border:1px solid #b5c3d6;border-radius:6px;background:var(--white,#fff);color:var(--ink,#172b4d);caret-color:var(--blue,#2458d3);}.ds-input::placeholder{color:var(--muted,#586a83);}.ds-input:hover{border-color:#8196b4;}.ds-input:focus-visible{outline:2px solid var(--blue,#2458d3);outline-offset:4px;}"
+    },
+    {
+      "name": "Navegación",
+      "kind": "nav",
+      "refersTo": "navigation",
+      "description": "Selección visible de página.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Navegación principal\"><a href=\"#panel\" aria-current=\"page\">Panel</a><a href=\"#usuarios\">Usuarios</a></nav>",
+      "css": ".ds-nav{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;display:grid;gap:4px;padding:12px;background:var(--surface,#f5f7fa);}.ds-nav a{display:flex;align-items:center;padding:12px 16px;min-height:46px;border-radius:5px;text-decoration:none;font-size:15px;color:var(--ink,#172b4d);}.ds-nav a:hover{background:#eaf0f9;}.ds-nav [aria-current=\"page\"]{color:var(--blue,#2458d3);background:#e4edff;font-weight:600;}.ds-nav a:focus-visible{outline:2px solid var(--blue,#2458d3);outline-offset:4px;}"
+    },
+    {
+      "name": "Tarjeta de edición",
+      "kind": "card",
+      "refersTo": "editor-card",
+      "description": "Contenedor de formulario con borde, sin sombra.",
+      "html": "<section class=\"ds-editor\"><h2>Editar NFC</h2><p>Configura su nombre y destino.</p></section>",
+      "css": ".ds-editor{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;padding:24px;border:1px solid var(--line,#e1e7f0);border-radius:8px;color:var(--ink,#172b4d);background:var(--white,#fff);}.ds-editor h2{font-size:21px;font-weight:650;line-height:1.25;margin:0 0 12px;}.ds-editor p{margin:0;color:var(--muted,#586a83);}"
+    },
+    {
+      "name": "Agrupación",
+      "kind": "custom",
+      "refersTo": "segmented-control",
+      "description": "Selección de representación del gráfico.",
+      "html": "<div class=\"ds-segmented\" role=\"group\" aria-label=\"Agrupar por\"><button aria-pressed=\"true\">Total</button><button aria-pressed=\"false\">Por NFC</button><button aria-pressed=\"false\">Por destino</button></div>",
+      "css": ".ds-segmented{display:inline-flex;padding:3px;border:1px solid var(--line,#e1e7f0);border-radius:6px;}.ds-segmented button{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;font-size:13px;min-height:34px;padding:7px 15px;border:0;border-radius:4px;background:transparent;color:var(--muted,#586a83);cursor:pointer;}.ds-segmented [aria-pressed=\"true\"]{background:var(--blue,#2458d3);color:white;}.ds-segmented button:hover:not([aria-pressed=\"true\"]){background:var(--surface,#f5f7fa);}.ds-segmented button:focus-visible{outline:2px solid var(--blue,#2458d3);outline-offset:4px;}"
+    },
+    {
+      "name": "Detalle NFC",
+      "kind": "custom",
+      "refersTo": "nfc-detail",
+      "description": "Destino e historial bajo la fila; muestra visual del estado desplegado.",
+      "html": "<section class=\"ds-detail\"><div class=\"ds-detail-nav\" role=\"group\" aria-label=\"Detalle de NFC\"><button aria-pressed=\"true\">Destino</button><button aria-pressed=\"false\">Historial</button></div><span class=\"ds-detail-label\">Destino actual</span><p>https://ejemplo.cl</p></section>",
+      "css": ".ds-detail{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;padding:0 24px 18px;border-radius:6px;background:#f2f6fc;color:var(--ink,#172b4d);}.ds-detail-nav{display:flex;gap:22px;border-bottom:1px solid var(--line,#e1e7f0);margin-bottom:16px;}.ds-detail-nav button{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;min-height:48px;padding:12px 2px;border:0;border-bottom:2px solid transparent;color:var(--muted,#586a83);background:transparent;cursor:pointer;}.ds-detail-nav button[aria-pressed=\"true\"]{color:var(--blue,#2458d3);border-bottom-color:var(--blue,#2458d3);}.ds-detail-nav button:focus-visible{outline:2px solid var(--blue,#2458d3);outline-offset:4px;}.ds-detail-label{font-size:12px;color:var(--muted,#586a83);}.ds-detail p{margin:4px 0;overflow-wrap:anywhere;}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Actividad y NFC",
+    "overview": "TOCA reúne la actividad y la administración de NFC en una superficie blanca, con navegación lateral azul y gris. La lectura parte por las visitas del período y continúa en filas compactas; el destino completo y el historial aparecen al desplegar cada NFC.\n\nEl sistema usa tipografía de sistema, separadores y fondos suaves para organizar información. La interfaz prioriza computador y reorganiza la misma web en pantallas pequeñas.",
+    "keyCharacteristics": [
+      "Navegación persistente y actividad antes del listado.",
+      "Un estado visible por NFC y detalles bajo demanda.",
+      "Azul para acciones y selección; profundidad sin sombras decorativas."
+    ],
+    "rules": [],
+    "dos": [
+      "Usa los tokens de app/globals.css y conserva el foco visible.",
+      "Distingue destino actual, destino histórico de la visita y visitas del período.",
+      "Mantén las acciones de copiar y desplegar disponibles en pantallas pequeñas."
+    ],
+    "donts": [
+      "No dupliques el estado con indicadores adicionales.",
+      "No muestres identificadores técnicos, URL completa ni última visita en la fila compacta.",
+      "No agregues sombras decorativas ni dependencias para reproducir estos componentes."
+    ]
+  }
+}

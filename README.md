@@ -48,9 +48,16 @@ El repositorio incluye el MVP multiusuario. Su migración fue aplicada con autor
 
 ## Variables
 
+La página pública `/` presenta TOCA y permite contactar por WhatsApp. El número se
+configura con `NEXT_PUBLIC_WHATSAPP_NUMBER` (por defecto, `56942668490`); usa el
+código de país y el número sin espacios. Al cambiarlo, vuelve a construir y
+publicar la aplicación. El gráfico de la landing usa datos de ejemplo locales;
+no consulta ni registra visitas reales. El acceso a clientes sigue en `/ingresar`.
+
 | Variable | Uso |
 | --- | --- |
 | `NEXT_PUBLIC_SITE_URL` | Dominio público de Vercel, sin `/` final |
+| `NEXT_PUBLIC_WHATSAPP_NUMBER` | Número comercial de WhatsApp con código de país; predeterminado: `56942668490` |
 | `NEXT_PUBLIC_SUPABASE_URL` | URL pública del proyecto Supabase |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Clave pública para autenticación y RLS |
 | `SUPABASE_URL` | URL de Supabase usada por el servidor |

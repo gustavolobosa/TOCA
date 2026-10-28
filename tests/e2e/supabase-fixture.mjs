@@ -11,6 +11,7 @@ export async function startFixture() {
   const profiles = [{ id: adminId, name: "Administrador de prueba", email: "admin@example.com", is_admin: true, is_active: true, must_change_password: true, token_valid_after: 0, created_at: new Date().toISOString() }];
   const users = [{ id: adminId, email: profiles[0].email, password: "SoloTest123!abc", factors: [] }];
   const links = [], events = [], history = [], sessions = new Map(), requests = [];
+  const failures = new Map();
   let origin;
   const userDto = user => ({ id: user.id, email: user.email, aud: "authenticated", role: "authenticated", app_metadata: {}, user_metadata: {}, factors: user.factors, created_at: new Date().toISOString() });
   function session(user, aal = "aal1") {
@@ -33,6 +34,10 @@ export async function startFixture() {
       res.end(JSON.stringify(data));
     }
     const fail = (message = "Not authorized", status = 403) => send({ code: "42501", message }, status);
+    if (failures.get(url.pathname) > 0) {
+      failures.set(url.pathname, failures.get(url.pathname) - 1);
+      return send({ message: "Error simulado para QA" }, 503);
+    }
     const service = req.headers.apikey === secretKey;
     const token = req.headers.authorization?.replace(/^Bearer /, "");
     let claims;
@@ -130,6 +135,7 @@ export async function startFixture() {
     for (const [key, value] of url.searchParams) {
       if (value.startsWith("eq.")) rows = rows.filter(row => String(row[key]) === value.slice(3));
       if (value.startsWith("gte.")) rows = rows.filter(row => String(row[key]) >= value.slice(4));
+      if (value.startsWith("lte.")) rows = rows.filter(row => String(row[key]) <= value.slice(4));
     }
     const total = rows.length;
     if (url.searchParams.has("order")) {
@@ -143,5 +149,5 @@ export async function startFixture() {
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   origin = `http://127.0.0.1:${server.address().port}`;
-  return { origin, server, profiles, users, links, events, history, requests };
+  return { origin, server, profiles, users, links, events, history, requests, failures };
 }

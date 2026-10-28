@@ -28,7 +28,6 @@ export default async function EditLinkPage({ params, searchParams }: EditLinkPag
     <main className="form-page" id="main-content">
       <Link className="back-link" href="/panel">Volver al panel</Link>
       <div className="form-heading">
-        <p className="section-kicker">Editar NFC</p>
         <h1>{link.name}</h1>
         <p className="muted">La URL grabada en la etiqueta no cambia; solo cambia el destino final.</p>
       </div>
