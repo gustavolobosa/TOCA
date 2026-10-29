@@ -122,6 +122,14 @@ Orden: título y tres filtros; total y agrupación; gráfico SVG de 220 px; enca
 
 ## Elevation & Depth
 
+### Panel compacto de actividad — actualización del 29 de octubre de 2026
+
+El panel usa el mes calendario actual en Chile, sin filtros de NFC, destino, período ni agrupación. Tres indicadores de igual altura y alineados: Visitas del mes, Variación mensual y NFC con visitas. El número de NFC con actividad tiene prioridad; el total visible aparece debajo. En escritorio cada indicador tiene un borde discreto; en móvil comparten separadores verticales. La variación compara los primeros N días de ambos meses, donde N es el menor entre el día actual y la duración del mes anterior. Si el mes anterior no tiene visitas de referencia, muestra «—» y la explicación «Sin comparación: mes anterior sin visitas». Hoy está en curso: la ayuda aclara que el período anterior incluye días completos.
+
+Tres gráficos de líneas apilados a la izquierda: Total de visitas, Visitas por NFC y Visitas por destino. Cada gráfico mide 144 px, tiene su propia tabla diaria y detalle accesible con identificador único. Los NFC sin visitas permanecen en el listado, pero no generan series vacías. Con más de seis NFC con visitas se muestran cinco y «Otros NFC», sin perder cantidades. Los destinos se atribuyen según el momento de cada visita.
+
+Los tres gráficos comparten un contenedor con filas separadas por líneas. A la derecha, una columna de fondo suave ocupa aproximadamente un tercio del ancho y muestra una torta SVG sencilla de hasta 200 px, sin agujero ni número central. Al pasar el cursor por una porción o su fila, se destaca el destino y se muestran nombre, visitas y porcentaje debajo de la torta. La lista incluye cantidades y porcentajes, y permite la misma consulta con teclado o toque. Escape restablece el total. Hasta 760 px la distribución se coloca debajo, con separación horizontal. El listado usa las mismas visitas mensuales; su paginación no altera los indicadores. La versión compacta se activa mediante una prop: la página pública conserva su gráfico de 240 px. Esta actualización reemplaza las referencias anteriores a filtros y al anillo de distribución.
+
 La profundidad se construye con fondos, bordes de 1 px y separación. No hay sombras decorativas. Menús y ayudas se superponen mediante posición y z-index, manteniendo borde visible y fondo blanco.
 
 El foco usa outline azul de 2 px y offset de 4 px. El spinner gira cada .8 s solo cuando no se solicita reducir movimiento; los cambios de estado no dependen de esa animación.

@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Image from "next/image";
-import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { PublicFooter, PublicHeader } from "@/components/public-navigation";
 import { TrafficPlot } from "@/components/traffic-plot";
+import { getWhatsAppUrl } from "@/lib/whatsapp";
 import styles from "./page.module.css";
 
 export const metadata: Metadata = {
@@ -29,21 +30,10 @@ function WhatsAppLink({ href }: { href: string }) {
 }
 
 export default function HomePage() {
-  const number = (process.env.NEXT_PUBLIC_WHATSAPP_NUMBER?.trim() || "56942668490").replace(/[+\s()-]/g, "");
-  if (!/^[1-9]\d{7,14}$/.test(number)) {
-    throw new Error("NEXT_PUBLIC_WHATSAPP_NUMBER debe ser un número internacional válido, incluido el código de país.");
-  }
-  const whatsapp = `https://wa.me/${number}?text=${encodeURIComponent("Hola, quiero conocer TOCA para mi comercio.")}`;
+  const whatsapp = getWhatsAppUrl();
 
   return <div className={styles.landing}>
-    <a className="skip-link" href="#contenido">Saltar al contenido</a>
-    <header className={styles.header}>
-      <Link className={styles.wordmark} href="/" aria-label="TOCA, inicio">TOCA</Link>
-      <nav aria-label="Navegación principal">
-        <a href="#como-funciona">Cómo funciona</a>
-        <Link href="/ingresar" prefetch={false}>Ingresar</Link>
-      </nav>
-    </header>
+    <PublicHeader />
     <main id="contenido">
       <section className={styles.hero} aria-labelledby="presentacion">
         <div className={styles.heroCopy}>
@@ -75,7 +65,7 @@ export default function HomePage() {
         <div className={styles.activityInner}>
           <div className={styles.activityCopy}>
             <h2 id="actividad">Mira las visitas de tu comercio.</h2>
-            <p>Consulta las visitas por NFC, destino y período.</p>
+            <p>Consulta las visitas del mes por NFC y destino.</p>
           </div>
           <div className={styles.chart}>
             <div className={styles.chartHeading}><h3>Visitas por día</h3><span>30 días</span></div>
@@ -98,9 +88,6 @@ export default function HomePage() {
         <WhatsAppLink href={whatsapp} />
       </section>
     </main>
-    <footer className={styles.footer}>
-      <Link href="/" className={styles.wordmark} aria-label="TOCA, inicio">TOCA</Link>
-      <span>Conecta. Cambia. Mide.</span>
-    </footer>
+    <PublicFooter />
   </div>;
 }

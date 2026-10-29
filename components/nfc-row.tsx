@@ -54,7 +54,7 @@ export function NfcRow({ link, owner, tocaUrl }: { link: NfcLinkSummary & { visi
         <Icon name="chevron" className={open ? "expanded" : ""} /><span><span className="nfc-name">{link.name}</span>{owner && <small>{owner}</small>}</span>
       </button></h3>
       <p className="nfc-destination"><span className="mobile-label">Destino actual</span>{destinationSummary(link)}</p>
-      <p className="nfc-visits"><span className="mobile-label">Visitas del período</span><span aria-label={`${link.visits} visitas en el período`}>{String(link.visits).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}</span></p>
+      <p className="nfc-visits"><span className="mobile-label">Visitas del mes</span><span aria-label={`${link.visits} visitas en el mes`}>{String(link.visits).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}</span></p>
       <p className={`nfc-state ${link.is_active ? "" : "is-paused"}`}>{link.is_active ? "Activo" : "Pausado"}</p>
       <div className="nfc-actions">
         <CopyButton value={tocaUrl} />
