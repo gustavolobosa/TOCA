@@ -1,19 +1,21 @@
 "use server";
 
-import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { parseName } from "@/lib/urls";
-import { parseEmail, parseUserId } from "@/lib/validation";
+import { parseEmail, parsePassword, parseUserId } from "@/lib/validation";
 import type { ActionState } from "@/lib/types";
 
 export async function createUser(_state: ActionState, formData: FormData): Promise<ActionState> {
   const { user } = await requireAdmin();
-  let name: string, email: string;
-  try { name = parseName(formData.get("name")); email = parseEmail(formData.get("email")); }
+  let name: string, email: string, password: string;
+  try {
+    name = parseName(formData.get("name"));
+    email = parseEmail(formData.get("email"));
+    password = parsePassword(formData.get("password"));
+  }
   catch (error) { return { error: (error as Error).message }; }
-  const password = `Aa1!${randomBytes(18).toString("base64url")}`;
   const service = createSupabaseServiceClient();
   const { data, error } = await service.auth.admin.createUser({ email, password, email_confirm: true });
   if (error || !data.user) return { error: "No pudimos crear la cuenta. Comprueba que el correo no esté registrado." };

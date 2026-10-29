@@ -38,7 +38,8 @@ test("los datos de cuentas, identificadores y páginas se validan en el servidor
   assert.equal(parseEmail(" CLIENTE@example.com "), "cliente@example.com");
   assert.equal(parseName(" Mesa 1 "), "Mesa 1");
   assert.equal(parsePassword("frase larga exclusiva"), "frase larga exclusiva");
-  assert.throws(() => parsePassword("toca123"));
+  for (const password of ["abcdef", "123456", "áéíóúñ", "Inici0toca1.", "a".repeat(128)]) assert.equal(parsePassword(password), password);
+  for (const password of [null, "", "abcde", "😀😀😀", "a".repeat(129), "abc\ndef", "abc\u0000def"]) assert.throws(() => parsePassword(password));
   assert.throws(() => parseEmail("mal@correo"));
   assert.throws(() => parseName(" "));
   assert.equal(parseId("12"), 12);

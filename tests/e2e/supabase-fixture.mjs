@@ -59,6 +59,8 @@ export async function startFixture() {
       if (!user) return fail("Session expired", 401);
       if (req.method === "PUT") {
         if (body.current_password !== user.password) return fail("Current password required", 400);
+        if (body.password === user.password) return fail("New password must be different", 422);
+        if (typeof body.password !== "string" || [...body.password].length < 6) return fail("Password too short", 422);
         user.password = body.password;
       }
       return send(userDto(user));
@@ -72,6 +74,7 @@ export async function startFixture() {
     }
     if (url.pathname === "/auth/v1/admin/users") {
       if (!service) return fail();
+      if (typeof body.password !== "string" || [...body.password].length < 6) return fail("Password too short", 422);
       if (users.some(item => item.email === body.email)) return fail("Already registered", 422);
       const account = { id: randomUUID(), email: body.email, password: body.password, factors: [] };
       users.push(account); return send(userDto(account));

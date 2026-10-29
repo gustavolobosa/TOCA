@@ -5,8 +5,8 @@ export function parseEmail(value: FormDataEntryValue | null) {
 }
 
 export function parsePassword(value: FormDataEntryValue | null) {
-  if (typeof value !== "string" || [...value].length < 12 || value.length > 128 || /[\u0000-\u001f\u007f]/.test(value)) {
-    throw new Error("Usa una contraseña de 12 a 128 caracteres, preferiblemente una frase larga y exclusiva.");
+  if (typeof value !== "string" || [...value].length < 6 || value.length > 128 || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw new Error("Usa una contraseña de 6 a 128 caracteres, sin caracteres de control. No es obligatorio incluir números ni símbolos.");
   }
   return value;
 }

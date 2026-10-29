@@ -56,10 +56,11 @@ async function changePassword(page, current, next) {
   await page.waitForURL(/ingresar\?password_changed=1/);
   await sleep(1100); // El límite de iat excluye todos los tokens emitidos antes del cambio.
 }
-async function createAccount(page, name, email) {
+async function createAccount(page, name, email, password) {
   await page.goto(`${origin}/panel/usuarios`);
   await page.getByLabel("Nombre", { exact: true }).fill(name);
   await page.getByLabel("Correo", { exact: true }).fill(email);
+  await page.getByLabel("Contraseña inicial", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Crear usuario", exact: true }).click();
   const receipt = page.getByLabel("Contraseña temporal", { exact: true });
   await receipt.waitFor(); return receipt.inputValue();
@@ -99,9 +100,22 @@ try {
   await changePassword(admin, "FraseAdminNueva2026!solo", "OtraFraseAdmin2026!solo");
   await login(admin, "admin@example.com", "OtraFraseAdmin2026!solo");
   check("El administrador cambia su contraseña sin código y vuelve a entrar", withoutCode && admin.url().endsWith("/panel"));
-  const passwordA = await createAccount(admin, "TOCA E2E A", "e2e-a@example.com");
-  const passwordB = await createAccount(admin, "TOCA E2E B", "e2e-b@example.com");
-  check("Las contraseñas temporales son individuales y largas", passwordA !== passwordB && passwordA.length >= 24 && passwordB.length >= 24);
+  await admin.goto(`${origin}/panel/usuarios`);
+  const initialPassword = admin.getByLabel("Contraseña inicial", { exact: true });
+  check("El formulario pide una clave inicial de mínimo seis caracteres sin patrón de composición", await initialPassword.getAttribute("minlength") === "6" && await initialPassword.getAttribute("pattern") === null && await initialPassword.getAttribute("type") === "password");
+  await mkdir(".impeccable/review", { recursive: true });
+  await admin.screenshot({ path: ".impeccable/review/initial-password-admin.png", fullPage: true, style: "nextjs-portal { visibility: hidden; }" });
+  await admin.getByLabel("Nombre", { exact: true }).fill("Cuenta inválida");
+  await admin.getByLabel("Correo", { exact: true }).fill("invalid@example.com");
+  await initialPassword.fill("abcde");
+  const creationRequests = fixture.requests.filter(request => request.path === "/auth/v1/admin/users").length;
+  await initialPassword.evaluate(input => { input.form.noValidate = true; });
+  await admin.getByRole("button", { name: "Crear usuario", exact: true }).click();
+  await admin.getByRole("alert").filter({ hasText: "6 a 128" }).waitFor();
+  check("El servidor rechaza claves iniciales cortas antes de crear cuentas aunque se omita la validación del navegador", fixture.requests.filter(request => request.path === "/auth/v1/admin/users").length === creationRequests && !fixture.profiles.some(item => item.email === "invalid@example.com"));
+  const passwordA = await createAccount(admin, "TOCA E2E A", "e2e-a@example.com", "abcdef");
+  const passwordB = await createAccount(admin, "TOCA E2E B", "e2e-b@example.com", "ghijkl");
+  check("Se conservan exactamente las contraseñas iniciales elegidas por el administrador", passwordA === "abcdef" && passwordB === "ghijkl");
   check("Las contraseñas temporales no aparecen en los logs de Next.js", !logs.includes(passwordA) && !logs.includes(passwordB));
   const ownerA = fixture.profiles.find(item => item.email === "e2e-a@example.com");
   const ownerB = fixture.profiles.find(item => item.email === "e2e-b@example.com");
@@ -121,8 +135,34 @@ try {
   const customerContext = await createContext({ viewport: { width: 390, height: 844 } });
   const customer = await customerContext.newPage();
   await login(customer, ownerA.email, passwordA, "/cuenta/clave");
-  await changePassword(customer, passwordA, "FraseClienteNueva2026!solo");
-  await login(customer, ownerA.email, "FraseClienteNueva2026!solo");
+  await customer.goto(`${origin}/panel`);
+  check("La cuenta nueva no puede saltarse el cambio obligatorio entrando directamente al panel", customer.url().endsWith("/cuenta/clave") && ownerA.must_change_password);
+  await customer.getByLabel("Contraseña actual", { exact: true }).fill(passwordA);
+  const newPassword = customer.getByLabel("Nueva contraseña", { exact: true });
+  check("El cambio de contraseña también permite seis caracteres sin patrón de composición", await newPassword.getAttribute("minlength") === "6" && await newPassword.getAttribute("pattern") === null);
+  await customer.screenshot({ path: ".impeccable/review/initial-password-user.png", fullPage: true, style: "nextjs-portal { visibility: hidden; }" });
+  await newPassword.fill("abcde");
+  await customer.getByLabel("Repite la nueva contraseña", { exact: true }).fill("abcde");
+  await newPassword.evaluate(input => { input.form.noValidate = true; });
+  const passwordUpdates = fixture.requests.filter(request => request.path === "/auth/v1/user" && request.method === "PUT").length;
+  await customer.getByRole("button", { name: "Guardar contraseña", exact: true }).click();
+  await customer.getByRole("alert").filter({ hasText: "6 a 128" }).waitFor();
+  check("La clave definitiva corta se rechaza en el servidor y conserva el bloqueo inicial", ownerA.must_change_password && fixture.requests.filter(request => request.path === "/auth/v1/user" && request.method === "PUT").length === passwordUpdates);
+  await customer.getByLabel("Contraseña actual", { exact: true }).fill(passwordA);
+  await newPassword.fill(passwordA);
+  await customer.getByLabel("Repite la nueva contraseña", { exact: true }).fill(passwordA);
+  await customer.getByRole("button", { name: "Guardar contraseña", exact: true }).click();
+  await customer.getByRole("alert").filter({ hasText: "Usa una distinta" }).waitFor();
+  check("Reutilizar la clave inicial no libera el acceso al panel", ownerA.must_change_password);
+  await changePassword(customer, passwordA, "mnopqr");
+  check("Una nueva clave de seis letras completa el cambio obligatorio", !ownerA.must_change_password);
+  await customer.goto(`${origin}/ingresar`);
+  await customer.getByLabel("Correo", { exact: true }).fill(ownerA.email);
+  await customer.getByLabel("Contraseña", { exact: true }).fill(passwordA);
+  await customer.getByRole("button", { name: "Entrar", exact: true }).click();
+  await customer.getByText("Correo o contraseña incorrectos.", { exact: true }).waitFor();
+  check("La contraseña inicial deja de permitir el ingreso después del cambio", new URL(customer.url()).pathname === "/ingresar");
+  await login(customer, ownerA.email, "mnopqr");
   check("El propietario ve su NFC y no la administración", await customer.getByRole("heading", { name: "Mostrador E2E" }).count() === 1 && await customer.getByRole("link", { name: "Usuarios", exact: true }).count() === 0);
   const denied = await customer.goto(`${origin}/panel/usuarios`);
   check("La URL administrativa tampoco permite entrar", denied.status() === 404);

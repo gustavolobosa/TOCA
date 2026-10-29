@@ -11,7 +11,8 @@ export default async function UsersPage() {
         <ActionForm action={createUser} label="Crear usuario">
           <label>Nombre<input name="name" required maxLength={100} autoComplete="name" /></label>
           <label>Correo<input name="email" required type="email" maxLength={254} autoComplete="email" /></label>
-          <small>Se generará una contraseña temporal individual. No se enviará un correo.</small>
+          <label>Contraseña inicial<input name="password" required type="password" minLength={6} maxLength={128} autoComplete="new-password" aria-describedby="initial-password-help" /></label>
+          <small id="initial-password-help">Mínimo 6 caracteres, sin obligación de incluir números ni símbolos. El usuario deberá cambiarla al entrar. No se enviará un correo.</small>
         </ActionForm>
       </section>
       <section aria-label="Cuentas existentes" className="user-list">
