@@ -14,8 +14,8 @@ test("WhatsApp normaliza el número sin aceptar texto, extensiones o números de
   for (const value of ["1234", "056912345678", "numero 56912345678", "56912345678 ext 1", "1".repeat(16), "https://wa.me/56912345678"]) assert.throws(() => parseDestination("whatsapp", value));
 });
 
-test("Google solo acepta enlaces explícitos para solicitar reseñas", () => {
-  for (const value of ["https://g.page/r/AbC_123/review", "https://g.page/negocio/review?rc", "https://search.google.com/local/writereview?placeid=ChIJ_1234"]) assert.equal(parseDestination("google_review", value).destination_url, value);
+test("Google construye el enlace de reseñas a partir del Place ID", () => {
+  for (const value of ["ChIJg8HVwyTHZZYRHwIAcgA-56Q", "AbC_123", "ChIJ_1234"]) assert.equal(parseDestination("google_review", value).destination_url, `https://search.google.com/local/writereview?placeid=${value}`);
   for (const value of ["https://g.page.evil.com/r/id/review", "https://evil.com/review", "https://www.google.com/maps/place/negocio", "https://g.page/r/id", "https://search.google.com/local/writereview", "https://g.page/r/id/review#fragment"]) assert.throws(() => parseDestination("google_review", value));
 });
 

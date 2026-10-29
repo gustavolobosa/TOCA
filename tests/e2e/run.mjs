@@ -169,7 +169,7 @@ try {
   await edit(customer, tag.id, "whatsapp", "+56 9 1234 5678");
   check("WhatsApp se guarda como número internacional", tag.destination_url === "https://wa.me/56912345678");
   await context.request.get(`${origin}/t/${stableSlug}`, { maxRedirects: 0 });
-  await edit(customer, tag.id, "google_review", "https://g.page/r/NegocioPrueba/review");
+  await edit(customer, tag.id, "google_review", "ChIJg8HVwyTHZZYRHwIAcgA-56Q");
   await context.request.get(`${origin}/t/${stableSlug}`, { maxRedirects: 0 });
   await edit(customer, tag.id, "generic", "https://example.com/menu");
   check("Los cuatro destinos conservan la URL NFC", tag.slug === stableSlug && fixture.history.length === 4);

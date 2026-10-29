@@ -14,11 +14,13 @@ export function DestinationFields({ type = "instagram", url = "" }: { type?: Des
       </select>
     </label>
     <label><span id="destination-field-label">{option.field}</span>
-      <input key={selected} name="destination" required maxLength={2048}
-        type={selected === "generic" || selected === "google_review" ? "url" : selected === "whatsapp" ? "tel" : "text"}
+      <input key={selected} name="destination" required maxLength={selected === "google_review" ? 256 : 2048}
+        type={selected === "generic" ? "url" : selected === "whatsapp" ? "tel" : "text"}
         defaultValue={selected === type ? destinationInput(type, url) : ""} placeholder={option.placeholder}
         aria-labelledby="destination-field-label" aria-describedby="destination-hint" autoComplete="off" />
-      <small id="destination-hint">{option.hint}</small>
+      <small id="destination-hint">{selected === "google_review" && type === "google_review" && url && !destinationInput(type, url)
+        ? "Este enlace guardado no contiene un Place ID. Ingresa el ID del lugar para guardar los cambios."
+        : option.hint}</small>
     </label>
   </>;
 }
