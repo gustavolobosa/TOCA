@@ -1,0 +1,9 @@
+.main { width: min(720px, calc(100% - 40px)); margin: 32px auto 56px; }
+.summary { display: grid; gap: 12px; }
+.summary > div { display: flex; justify-content: space-between; gap: 16px; }
+.summary dd { margin: 0; font-variant-numeric: tabular-nums; }
+.result { margin-top: 24px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 20px 0; }
+.reference { overflow-wrap: anywhere; }
+.testing { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 16px; }
+.testing summary { cursor: pointer; font-weight: 600; }

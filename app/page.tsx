@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { PublicFooter, PublicHeader } from "@/components/public-navigation";
@@ -39,7 +40,7 @@ export default function HomePage() {
         <div className={styles.heroCopy}>
           <h1 id="presentacion">Un toque para conectar. Datos para entender.</h1>
           <p>Tu cliente acerca su celular al soporte NFC y abre el enlace que eliges: tus redes, WhatsApp o reseñas de Google.</p>
-          <WhatsAppLink href={whatsapp} />
+          <Link className={`button button-primary ${styles.contactButton}`} href="/precios">Ver planes y contratar</Link>
           <p className={styles.heroNote}>Configurado y listo para tu comercio.</p>
         </div>
         <Image className={styles.heroImage} src="/images/toca-en-uso.png" width={1536} height={1024}

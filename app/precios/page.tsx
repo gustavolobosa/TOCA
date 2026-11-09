@@ -1,4 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { plans, pesos } from "@/lib/pricing";
+import { checkoutEnabled } from "@/lib/checkout/config";
 
 import { PublicFooter, PublicHeader } from "@/components/public-navigation";
 import { getWhatsAppUrl } from "@/lib/whatsapp";
@@ -6,7 +9,7 @@ import styles from "./page.module.css";
 
 export const metadata: Metadata = {
   title: "Precios por NFC | TOCA",
-  description: "TOCA desde $1.300 + IVA al mes por NFC o $13.000 + IVA al año. Incluye soporte acrílico, diseño disponible, configuración inicial y acceso al panel.",
+  description: `TOCA desde ${pesos(plans.mensual.net)} + IVA al mes por NFC o ${pesos(plans.anual.net)} + IVA al año. Incluye soporte acrílico, configuración inicial y acceso al panel.`,
 };
 
 export default function PricingPage() {
@@ -19,31 +22,24 @@ export default function PricingPage() {
       </div>
 
       <section className={styles.plans} aria-label="Planes de TOCA">
-        <article className={styles.plan} aria-labelledby="plan-mensual">
-          <h2 id="plan-mensual">Plan mensual</h2>
-          <p className={styles.price}>$1.300 <span>+ IVA</span></p>
-          <p className={styles.period}>por NFC al mes</p>
-          <p className={styles.billing}>Pago mes a mes.</p>
-          <a className={`button button-primary ${styles.action}`}
-            aria-label="Consultar el plan mensual por WhatsApp"
-            href={getWhatsAppUrl("Hola, quiero contratar el plan mensual de TOCA: $1.300 + IVA por NFC al mes.")}>
-            Consultar por WhatsApp
-          </a>
-        </article>
-
-        <article className={`${styles.plan} ${styles.annual}`} aria-labelledby="plan-anual">
-          <h2 id="plan-anual">Plan anual</h2>
-          <p className={styles.price}>$13.000 <span>+ IVA</span></p>
-          <p className={styles.period}>por NFC al año · un solo pago</p>
-          <p className={styles.billing}><strong>2 meses de regalo.</strong> Pagas 10 y usas 12.</p>
-          <a className={`button button-primary ${styles.action}`}
-            aria-label="Consultar el plan anual por WhatsApp"
-            href={getWhatsAppUrl("Hola, quiero contratar el plan anual de TOCA: $13.000 + IVA por NFC al año, en un solo pago.")}>
-            Consultar por WhatsApp
-          </a>
-        </article>
+        {(["mensual", "anual"] as const).map(id => {
+          const plan = plans[id];
+          return <article key={id} className={`${styles.plan} ${id === "anual" ? styles.annual : ""}`} aria-labelledby={`plan-${id}`}>
+            <h2 id={`plan-${id}`}>{plan.name}</h2>
+            <p className={styles.price}>{pesos(plan.net)} <span>+ IVA</span></p>
+            <p className={styles.period}>por NFC al {plan.period} · {pesos(plan.total)} con IVA</p>
+            <p className={styles.billing}>{id === "anual" ? <><strong>2 meses de regalo.</strong> Pagas 10 y usas 12. Cobro anual por adelantado.</> : "Pago mes a mes."}</p>
+            {checkoutEnabled() ? <Link className={`button button-primary ${styles.action}`} href={`/comprar?plan=${id}`}>
+              Elegir plan {id}
+            </Link> : <a className={`button button-primary ${styles.action}`}
+              aria-label={`Consultar el plan ${id} por WhatsApp`}
+              href={getWhatsAppUrl(`Hola, quiero contratar el plan ${id} de TOCA: ${pesos(plan.net)} + IVA por NFC al ${plan.period}.`)}>
+              Consultar por WhatsApp
+            </a>}
+          </article>;
+        })}
       </section>
-      <p className={styles.currency}>Precios en pesos chilenos. IVA no incluido.</p>
+      <p className={styles.currency}>Precios por NFC en pesos chilenos. Mostramos el precio neto y el total con IVA.</p>
 
       <section className={styles.included} aria-labelledby="incluye">
         <div>
