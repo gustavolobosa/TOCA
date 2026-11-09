@@ -104,11 +104,12 @@ export async function startCheckout(purchase: CheckoutPurchase) {
 }
 async function invoicesFor(subscriptionId: string, mp: Client, paymentId?: number) {
   const invoices: Invoice[] = [];
-  for (let offset = 0; offset < 1000; offset += 100) {
+  const pageSize = 10;
+  for (let offset = 0; offset < 1000; offset += pageSize) {
     const search = await mp<{ results: Invoice[]; paging?: { total: number } }>(
-      `/authorized_payments/search?preapproval_id=${encodeURIComponent(subscriptionId)}&limit=100&offset=${offset}${paymentId ? `&payment_id=${paymentId}` : ""}`);
+      `/authorized_payments/search?preapproval_id=${encodeURIComponent(subscriptionId)}&limit=${pageSize}&offset=${offset}${paymentId ? `&payment_id=${paymentId}` : ""}`);
     invoices.push(...search.results);
-    if (search.results.length < 100 || (search.paging && offset + search.results.length >= search.paging.total)) return invoices;
+    if (search.results.length < pageSize || (search.paging && offset + search.results.length >= search.paging.total)) return invoices;
   }
   throw new CheckoutError("La suscripción requiere una revisión de su historial de pagos.", 503);
 }
