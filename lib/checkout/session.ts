@@ -1,12 +1,13 @@
 import "server-only";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import { isPlan, isNfcQuantity, plans, type PlanId } from "@/lib/pricing";
+import { isPlan, isNfcQuantity, type PlanId } from "@/lib/pricing";
 import { CheckoutError, checkoutSecret, checkoutMode, type CheckoutMode } from "./config";
+import { purchasePrice, type PromotionPrice } from "./promotions";
 
 const cookieName = "toca_checkout_account_v2";
 const lifetime = 60 * 60 * 24;
-export type CheckoutPurchase = { id: string; plan: PlanId; quantity: number; origin: string; userId: string; totalAmount: number; mode: CheckoutMode; buyerEmail: string };
+export type CheckoutPurchase = { id: string; plan: PlanId; quantity: number; origin: string; userId: string; totalAmount: number; mode: CheckoutMode; buyerEmail: string; unitNet?: number; promoId?: string; promoCode?: string };
 export type CheckoutSession = CheckoutPurchase & { expires: number };
 function signature(value: string) {
   const secret = checkoutSecret("CHECKOUT_SESSION_SECRET");
@@ -29,11 +30,12 @@ export async function readSession(origin: string, userId: string): Promise<Check
   if (!session.buyerEmail) throw new CheckoutError("Sesión de compra inválida.", 403);
   return session;
 }
-export async function newSession(plan: PlanId, quantity: number, origin: string, userId: string, buyerEmail: string) {
+export async function newSession(plan: PlanId, quantity: number, origin: string, userId: string, buyerEmail: string, promotion: PromotionPrice | null = null) {
   const mode = checkoutMode();
   if (!mode) throw new CheckoutError("Las compras nuevas están deshabilitadas.", 503);
   if (!buyerEmail || (mode === "production" && buyerEmail.toLowerCase().endsWith("@testuser.com"))) throw new CheckoutError("Usa un correo real y verificado para comprar.");
-  const session: CheckoutSession = { id: randomUUID(), plan, quantity, origin, userId, mode, buyerEmail, totalAmount: plans[plan].total * quantity, expires: Date.now() + lifetime * 1000 };
+  const session: CheckoutSession = { id: randomUUID(), plan, quantity, origin, userId, mode, buyerEmail,
+    ...purchasePrice(plan, quantity, promotion), ...promotion, expires: Date.now() + lifetime * 1000 };
   const payload = Buffer.from(JSON.stringify(session)).toString("base64url");
   (await cookies()).set(cookieName, `${payload}.${signature(payload)}`, {
     httpOnly: true, secure: origin.startsWith("https:"), sameSite: "lax", path: "/", maxAge: lifetime,

@@ -5,6 +5,10 @@
 .quantity { display: grid; gap: 8px; margin: 20px 0; font-weight: 600; }
 .quantity input { width: 110px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
 .quantity small { font-weight: 400; }
+.promotion { margin: 20px 0; }
+.promotion label { font-weight: 600; }
+.promotion .actions { margin: 8px 0; }
+.promotion input { min-width: 0; width: 190px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; text-transform: uppercase; }
 .result { margin-top: 24px; }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 20px 0; }
 .reference { overflow-wrap: anywhere; }

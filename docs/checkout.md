@@ -4,15 +4,15 @@ Flujo: plan y cantidad → registro con correo y contraseña → confirmar corre
 
 El propietario se obtiene de la sesión verificada de TOCA. En producción, el cliente puede usar su sesión de Mercado Pago aunque tenga otro correo: la propiedad no depende del correo de la billetera. Mercado Pago puede solicitar sus propias validaciones de identidad o del medio de pago; TOCA no puede omitirlas.
 
-## 1. Migración pendiente: ejecutar antes de publicar el código
+## 1. Migraciones: ejecutar antes de publicar el código
 
-En el SQL Editor del **Supabase actual de TOCA**, ejecuta completo:
+La migración de producción `supabase/migrations/20261109152816_checkout_production_billing.sql` ya está aplicada en el proyecto actual; no la ejecutes nuevamente.
 
-`supabase/migrations/20261109152816_checkout_production_billing.sql`
+Para los códigos promocionales, la nueva migración es `supabase/migrations/20261109171722_checkout_promotional_codes.sql`. Ejecuta solo esta si las anteriores ya están aplicadas. Instrucciones: [promociones](./promociones.md).
 
-Codex dejó el archivo preparado; **no lo ejecutó**. Requiere las migraciones anteriores, incluida `20261109132803_checkout_accounts_and_nfc_fulfillment.sql`, que ya aplicaste. En una instalación nueva, aplica todas las migraciones en orden.
+Codex dejó la nueva migración preparada; **no la ejecutó**. Requiere las migraciones anteriores, incluida `20261109132803_checkout_accounts_and_nfc_fulfillment.sql`, que ya aplicaste. En una instalación nueva, aplica todas las migraciones en orden.
 
-La migración conserva la tabla histórica `checkout_test_attempts`, agrega `mode`, correo verificado de compra, vigencia y estado de facturación. Las compras anteriores quedan como `test`; no se convierten en compras reales. Agrega `checkout_payments` para los cobros reales, una RPC transaccional de conciliación y la comprobación de vigencia en `resolve_nfc`. Las tablas de cobro y sus RPC son exclusivas del servidor (`service_role`).
+La migración de producción conserva la tabla histórica `checkout_test_attempts`, agrega `mode`, correo verificado de compra, vigencia y estado de facturación. Las compras anteriores quedan como `test`; no se convierten en compras reales. Agrega `checkout_payments` para los cobros reales, una RPC transaccional de conciliación y la comprobación de vigencia en `resolve_nfc`. Las tablas de cobro y sus RPC son exclusivas del servidor (`service_role`).
 
 Los NFC manuales y los de prueba mantienen su comportamiento anterior. La migración no cobra, cancela suscripciones ni genera NFC por sí sola. El código anterior puede seguir funcionando en modo de prueba mientras publicas la versión nueva.
 
@@ -82,7 +82,7 @@ Orden recomendado:
 5. Abre la URL pública: la compra real ya no debe mostrar el aviso ni la tarjeta de prueba.
 6. Comprueba en Vercel → Schedules / Cron Jobs que aparezca `/api/cron/checkout` y que `CRON_SECRET` esté configurado.
 
-`vercel.json` programa una revisión diaria a las **06:00 UTC**, como respaldo al webhook y a las consultas automáticas de la pantalla. Revisa hasta **20 compras reales por ejecución**, empezando por las menos revisadas, incluidas canceladas para detectar pagos tardíos. También funciona con el checkout en `off`. No crea suscripciones, no solicita cobros y no emite devoluciones: consulta pagos existentes y actualiza NFC.
+`vercel.json` programa una revisión diaria a las **06:00 UTC**, como respaldo al webhook y a las consultas automáticas de la pantalla. Revisa hasta **20 compras reales por ejecución**, empezando por las menos revisadas, incluidas canceladas para detectar pagos tardíos. También funciona con el checkout en `off`. No crea suscripciones, no solicita cobros y no emite devoluciones. Además revisa hasta 10 reservas promocionales vencidas por ejecución: cancela checkouts promocionales pendientes abandonados y libera cupos únicamente tras verificar cancelación, pagos y una espera mínima de 24 horas desde la cancelación.
 
 Esta revisión es un respaldo para bajo volumen, no una garantía de revisar todas las compras cada día. Con más de 20 compras históricas, aumenta la frecuencia del cron (por ejemplo `*/15 * * * *` en un plan que lo permita) y revisa la capacidad del lote. El endpoint devuelve `checked` y `failed`; revisa los fallos 503 en los logs y no des por recuperado un pago solo porque se ejecutó el cron. Las notificaciones y el resultado de compra no esperan al cron.
 
@@ -102,7 +102,7 @@ Para un sitio comercial, Vercel indica que Hobby es de uso personal/no comercial
 
 `authorized` en la suscripción no equivale a un pago aprobado. La activación requiere consultar el pago real y una factura vinculada; `live_mode=true` también es obligatorio en producción. Actualizaciones antiguas del mismo pago no sobreescriben estados más recientes.
 
-El importe se calcula en el servidor y queda guardado en la compra. Por ahora no hay descuentos/cupones propios ni cambios de cantidad sobre una suscripción existente; no edites importe o frecuencia directamente en Mercado Pago, porque dejarían de coincidir con lo contratado en TOCA.
+El importe se calcula en el servidor y queda guardado en la compra. Los [códigos promocionales propios](./promociones.md) fijan el precio mensual por NFC de compras nuevas. No hay cambios de cantidad sobre una suscripción existente; no edites importe o frecuencia directamente en Mercado Pago, porque dejarían de coincidir con lo contratado en TOCA.
 
 Esto administra el servicio digital. No programa ni despacha las etiquetas físicas, ni genera documentos tributarios.
 

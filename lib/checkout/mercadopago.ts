@@ -2,7 +2,7 @@ import "server-only";
 import { plans } from "@/lib/pricing";
 import { CheckoutError, checkoutMode, checkoutSecret, sellerId, testBuyerEmail, webhookSecret, type CheckoutMode } from "./config";
 import type { CheckoutPurchase } from "./session";
-import { claimAttempt, getAttempt, saveAttempt, findAttempt, purchaseFromAttempt, fulfillPurchase, recordPayment } from "./store";
+import { claimAttempt, getAttempt, saveAttempt, findAttempt, purchaseFromAttempt, fulfillPurchase, recordPayment, releasePromotion, consumeTestPromotion } from "./store";
 
 type Subscription = {
   id: string; status: string; external_reference: string; collector_id: number; init_point: string;
@@ -13,7 +13,7 @@ type Payment = {
   external_reference: string; collector_id: number; live_mode?: boolean; payer?: { email?: string };
   transaction_amount_refunded?: number; date_last_updated: string;
 };
-type Invoice = { id: number; preapproval_id: string; debit_date: string; payment?: { id: number; status?: string } };
+type Invoice = { id: number; preapproval_id: string; debit_date: string; status?: string; payment?: { id: number; status?: string } };
 class ProviderError extends CheckoutError {
   constructor(public providerStatus: number) { super("Mercado Pago no pudo responder. Verificaremos el intento sin repetir el cobro.", 502); }
 }
@@ -115,7 +115,8 @@ async function invoicesFor(subscriptionId: string, mp: Client, paymentId?: numbe
 }
 export async function checkoutStatus(purchase: CheckoutPurchase, notifiedPaymentId?: number, provider?: Client): Promise<CheckoutStatus> {
   const attempt = await getAttempt(purchase);
-  const base = { purchaseId: purchase.id, mode: purchase.mode, plan: purchase.plan, quantity: purchase.quantity, totalAmount: purchase.totalAmount, reference: reference(purchase) };
+  const base = { purchaseId: purchase.id, mode: purchase.mode, plan: purchase.plan, quantity: purchase.quantity, totalAmount: purchase.totalAmount,
+    unitNet: purchase.unitNet, promoCode: purchase.promoCode, promoState: attempt?.promo_state ?? undefined, reference: reference(purchase) };
   if (!attempt) return { ...base, state: "empty" };
   if (attempt.state === "failed") return { ...base, state: "failed" };
   const mp = provider ?? client(purchase.mode);
@@ -126,7 +127,7 @@ export async function checkoutStatus(purchase: CheckoutPurchase, notifiedPayment
   if (attempt.subscription_id !== subscription.id || attempt.state !== state) await saveAttempt(purchase, { subscription_id: subscription.id, state });
   const invoices = await invoicesFor(subscription.id, mp, notifiedPaymentId);
   const ordered = invoices.filter(item => item.payment?.id).sort((a, b) => Date.parse(b.debit_date) - Date.parse(a.debit_date));
-  const selected = notifiedPaymentId ? [ordered.find(item => item.payment?.id === notifiedPaymentId)] :
+  const selected = notifiedPaymentId ? [ordered.find(item => item.payment?.id === notifiedPaymentId)] : purchase.promoId && attempt.promo_state === "reserved" ? ordered :
     [ordered[0], ordered.find(item => item.payment?.status === "approved")];
   if (notifiedPaymentId && !selected[0]) throw new CheckoutError("El pago todavía no aparece asociado a la suscripción. Reintentaremos la verificación.", 503);
   let latest: Payment | undefined;
@@ -141,10 +142,13 @@ export async function checkoutStatus(purchase: CheckoutPurchase, notifiedPayment
     verifyPayment(payment, purchase);
     latest ??= payment;
     if (purchase.mode === "production") await recordPayment(purchase, subscription.id, payment, verifiedInvoice);
-    else if (payment.status === "approved") await fulfillPurchase(purchase, subscription.id, payment.id);
+    else {
+      if (["approved", "refunded", "charged_back"].includes(payment.status) || (payment.transaction_amount_refunded ?? 0) > 0) await consumeTestPromotion(purchase);
+      if (payment.status === "approved") await fulfillPurchase(purchase, subscription.id, payment.id);
+    }
   }
   const updated = await getAttempt(purchase);
-  return { ...base, state, fulfilled: Boolean(updated?.fulfilled_at), paidUntil: updated?.paid_until ?? undefined, billingBlocked: updated?.billing_blocked,
+  return { ...base, state, promoState: updated?.promo_state ?? undefined, fulfilled: Boolean(updated?.fulfilled_at), paidUntil: updated?.paid_until ?? undefined, billingBlocked: updated?.billing_blocked,
     subscriptionId: subscription.id, subscriptionStatus: subscription.status,
     checkoutUrl: subscription.status === "pending" && purchase.mode === checkoutMode() ? checkoutUrl(subscription) : undefined,
     paymentId: latest?.id, paymentStatus: latest?.status ?? "pending", paymentDetail: latest?.status_detail };
@@ -154,6 +158,7 @@ export type CheckoutStatus = {
   purchaseId?: string; fulfilled?: boolean; totalAmount?: number; mode?: CheckoutMode; paidUntil?: string; billingBlocked?: boolean;
   plan?: CheckoutPurchase["plan"]; quantity?: number; reference?: string; subscriptionId?: string; subscriptionStatus?: string;
   checkoutUrl?: string; paymentId?: number; paymentStatus?: string; paymentDetail?: string;
+  unitNet?: number; promoCode?: string; promoState?: "reserved" | "consumed" | "released";
 };
 export async function cancelCheckout(purchase: CheckoutPurchase) {
   const mp = client(purchase.mode);
@@ -164,6 +169,56 @@ export async function cancelCheckout(purchase: CheckoutPurchase) {
   if (!subscription) throw new CheckoutError("Todavía verificamos la creación. Espera el resultado antes de iniciar otra compra.", 409);
   if (!["cancelled", "canceled"].includes(subscription.status)) await mp(`/preapproval/${subscription.id}`, { status: "cancelled" }, "PUT");
   await saveAttempt(purchase, { subscription_id: subscription.id, state: "cancelled" });
+}
+
+// No liberar por tiempo solamente: un checkout externo puede seguir siendo cobrable.
+export async function cleanupPromotion(purchase: CheckoutPurchase) {
+  const mp = client(purchase.mode);
+  await checkoutStatus(purchase, undefined, mp);
+  let attempt = await getAttempt(purchase);
+  if (!attempt || attempt.promo_state !== "reserved" || !attempt.promo_expires_at || Date.parse(attempt.promo_expires_at) > Date.now()) return;
+  let subscription = await findSubscription(purchase, attempt.subscription_id, mp);
+  // Una creación de resultado incierto se mantiene reservada; nunca repetir el POST.
+  if (!subscription) return;
+  if (subscription.status === "pending") {
+    await mp(`/preapproval/${subscription.id}`, { status: "cancelled" }, "PUT");
+    subscription = await findSubscription(purchase, subscription.id, mp);
+  }
+  if (!subscription || !["cancelled", "canceled"].includes(subscription.status)) return;
+  await saveAttempt(purchase, { subscription_id: subscription.id, state: "cancelled" });
+  attempt = await getAttempt(purchase);
+  if (!attempt?.promo_cancelled_at || Date.parse(attempt.promo_cancelled_at) > Date.now() - 86400000) return;
+  // Reconciliar otra vez después de confirmar la cancelación y esperar la ventana de seguridad.
+  await checkoutStatus(purchase, undefined, mp);
+  const invoices = await invoicesFor(subscription.id, mp);
+  for (const item of invoices) {
+    const invoice = await mp<Invoice>(`/authorized_payments/${item.id}`);
+    if (invoice.preapproval_id !== subscription.id) throw new CheckoutError("Factura inconsistente.", 403);
+    if (!invoice.payment?.id) {
+      if (!["cancelled", "canceled"].includes(invoice.status ?? "")) return;
+    } else {
+      const payment = await mp<Payment>(`/v1/payments/${invoice.payment.id}`);
+      verifyPayment(payment, purchase);
+      if (!["rejected", "cancelled"].includes(payment.status)) return;
+    }
+  }
+  // Un pago puede aparecer en la búsqueda antes de asociarse a una factura.
+  for (let offset = 0; offset < 1000; offset += 10) {
+    const search = await mp<{ results: Payment[]; paging: { total: number } }>(
+      `/v1/payments/search?external_reference=${encodeURIComponent(reference(purchase))}&limit=10&offset=${offset}`);
+    if (!Array.isArray(search.results) || !Number.isSafeInteger(search.paging?.total)) throw new CheckoutError("Historial de pagos incompleto.", 503);
+    for (const item of search.results) {
+      const payment = await mp<Payment>(`/v1/payments/${item.id}`);
+      verifyPayment(payment, purchase);
+      if (!["rejected", "cancelled"].includes(payment.status)) return;
+    }
+    if (offset + search.results.length >= search.paging.total) {
+      await releasePromotion(purchase.id);
+      return;
+    }
+    if (!search.results.length) break;
+  }
+  throw new CheckoutError("No pudimos verificar todo el historial para liberar el código.", 503);
 }
 
 // La notificación solo da una pista. La identidad, el importe y el estado se leen de la API.

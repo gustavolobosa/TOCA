@@ -15,6 +15,8 @@ export default function Checkout({ planId, resultPage = false, authenticated = t
   const [error, setError] = useState("");
   const [retrying, setRetrying] = useState(false);
   const [quantityInput, setQuantityInput] = useState(String(initialQuantity));
+  const [promoInput, setPromoInput] = useState("");
+  const [promotion, setPromotion] = useState<{ promoCode: string; unitNet: number } | null>(null);
   const terminal = status && (["empty", "failed", "cancelled"].includes(status.state) ||
     (status.paymentStatus === "approved" && status.fulfilled) ||
     ["rejected", "cancelled", "refunded", "charged_back"].includes(status.paymentStatus ?? ""));
@@ -24,8 +26,12 @@ export default function Checkout({ planId, resultPage = false, authenticated = t
   const validQuantity = isNfcQuantity(quantity);
   const confirmedPlan = plans[status?.plan ?? planId];
   const confirmedQuantity = status?.quantity ?? 1;
-  const total = (active || resultPage) && status?.totalAmount ? status.totalAmount : plan.total * quantity;
-  const net = (active || resultPage) && status?.totalAmount ? Math.round(total / 1.19) : plan.net * quantity;
+  const unitNet = (active || resultPage) ? status?.unitNet ?? plan.net : promotion?.unitNet ?? plan.net;
+  const unitTotal = Math.round(unitNet * 119 / 100);
+  const total = (active || resultPage) && status?.totalAmount ? status.totalAmount : unitTotal * quantity;
+  const net = (active || resultPage) && status?.totalAmount && !status.unitNet ? Math.round(total / 1.19) : unitNet * quantity;
+  const promoCode = (active || resultPage) ? status?.promoCode : promotion?.promoCode;
+  const unappliedCode = Boolean(!active && promoInput.trim() && promoInput.trim().toUpperCase() !== promotion?.promoCode);
   const returnPath = `/comprar?plan=${planId}&cantidad=${validQuantity ? quantity : 1}`;
   const endpoint = purchaseId ? `/api/checkout?compra=${encodeURIComponent(purchaseId)}` : "/api/checkout";
   const isTest = (status?.mode ?? mode) === "test";
@@ -50,7 +56,7 @@ export default function Checkout({ planId, resultPage = false, authenticated = t
           if (response.status >= 400 && response.status < 500 && response.status !== 429) return;
           throw new Error("Consulta pendiente");
         }
-        setStatus(data); setRetrying(false); setError("");
+        setStatus(data); setRetrying(false); setError(previous => data.state === "empty" ? previous : "");
       } catch { if (controller.signal.aborted) return; setRetrying(true); }
       if (!controller.signal.aborted) { timer = setTimeout(poll, delay); delay = Math.min(delay * 1.5, 30000); }
     }
@@ -63,18 +69,30 @@ export default function Checkout({ planId, resultPage = false, authenticated = t
     const response = await fetch(url, {
       method: "POST", headers: { "Content-Type": "application/json" },
       signal: AbortSignal.timeout(65000),
-      body: JSON.stringify({ action, ...(action !== "cancel" ? { plan: planId, quantity: Number(quantityInput) } : {}) }),
+      body: JSON.stringify({ action, ...(action !== "cancel" ? { plan: planId, quantity: Number(quantityInput), promoCode: promotion?.promoCode ?? "", expectedTotal: total } : {}) }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "No pudimos completar la solicitud.");
     return data as CheckoutStatus;
   }
+  async function applyCode() {
+    if (lock.current || !validQuantity || !promoInput.trim()) return;
+    lock.current = true; setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(15000), body: JSON.stringify({ action: "quote", plan: planId, quantity, promoCode: promoInput }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "No pudimos aplicar el código.");
+      setPromotion({ promoCode: data.promoCode, unitNet: data.unitNet }); setPromoInput(data.promoCode);
+    } catch (err) { setPromotion(null); setError(err instanceof Error ? err.message : "No pudimos aplicar el código."); }
+    finally { lock.current = false; setBusy(false); }
+  }
   async function pay() {
-    if (lock.current || !isNfcQuantity(Number(quantityInput))) return;
+    if (lock.current || unappliedCode || !isNfcQuantity(Number(quantityInput))) return;
     lock.current = true; setBusy(true); setError("");
     try {
       await send("prepare");
-      setStatus({ state: "creating", plan: planId, quantity: Number(quantityInput) });
+      setStatus({ state: "creating", plan: planId, quantity: Number(quantityInput), totalAmount: total, unitNet, promoCode });
       const next = await send("pay");
       setStatus(next);
       if (next.checkoutUrl) window.location.assign(next.checkoutUrl);
@@ -100,10 +118,24 @@ export default function Checkout({ planId, resultPage = false, authenticated = t
           value={active ? quantity : quantityInput} disabled={Boolean(active) || busy || !status}
           onChange={event => setQuantityInput(event.target.value)}
           aria-invalid={!validQuantity} aria-describedby="nfc-quantity-help" />
-        <small id="nfc-quantity-help">De 1 a {maxNfcQuantity} NFC. {pesos(plan.total)} con IVA por NFC al {plan.period}.</small>
+        <small id="nfc-quantity-help">De 1 a {maxNfcQuantity} NFC. {pesos(unitTotal)} con IVA por NFC al {plan.period}.</small>
       </div>}
+      {!resultPage && authenticated && planId === "mensual" && !active && <div className={styles.promotion}>
+        <label htmlFor="promo-code">Código promocional (opcional)</label>
+        <div className={styles.actions}>
+          <input id="promo-code" value={promoInput} maxLength={32} autoComplete="off" autoCapitalize="characters" spellCheck={false}
+            disabled={busy || !status} onChange={event => { setPromoInput(event.target.value); setPromotion(null); }} />
+          <button className="button button-secondary" disabled={busy || !status || !validQuantity || !promoInput.trim()} onClick={applyCode}>Aplicar</button>
+          {promoInput && <button className="button button-secondary" disabled={busy} onClick={() => { setPromoInput(""); setPromotion(null); setError(""); }}>Quitar</button>}
+        </div>
+        {unappliedCode && <small>Aplica el código o quítalo para continuar.</small>}
+      </div>}
+      {promoCode && <p className="notice" role="status"><strong>{promoCode}</strong>: {pesos(unitNet)} + IVA por NFC al mes durante todas las renovaciones de esta suscripción.
+        {!resultPage && !active && <> Al abrir Mercado Pago se reserva un uso. Completa el checkout dentro de 24 horas; después puede cancelarse si sigue pendiente.</>}
+      </p>}
       {!validQuantity && <p className="form-error" role="alert">Ingresa una cantidad entera entre 1 y {maxNfcQuantity}.</p>}
       <dl className={styles.summary} aria-live="polite" aria-atomic="true">
+        {promoCode && net < plan.net * quantity && <div><dt>Ahorro sin IVA por {plan.period}</dt><dd>{pesos(plan.net * quantity - net)}</dd></div>}
         <div><dt>Precio sin IVA</dt><dd>{validQuantity ? pesos(net) : "—"}</dd></div>
         <div><dt>IVA (19 %)</dt><dd>{validQuantity ? pesos(total - net) : "—"}</dd></div>
         <div><dt><strong>Total por {plan.period}</strong></dt><dd><strong>{validQuantity ? pesos(total) : "—"}</strong></dd></div>
@@ -114,7 +146,7 @@ export default function Checkout({ planId, resultPage = false, authenticated = t
         <Link className="button button-primary" href={`/registro?next=${encodeURIComponent(returnPath)}`}>Crear cuenta y continuar</Link>
         <Link className="button button-secondary" href={`/ingresar?next=${encodeURIComponent(returnPath)}`}>Ya tengo cuenta</Link>
       </div>}
-      {authenticated && !resultPage && !active && <button className="button button-primary" disabled={busy || !status || !validQuantity} onClick={pay}>
+      {authenticated && !resultPage && !active && <button className="button button-primary" disabled={busy || !status || !validQuantity || unappliedCode} onClick={pay}>
         {busy ? "Preparando compra…" : "Suscribirme con Mercado Pago"}
       </button>}
       {status?.checkoutUrl && status.subscriptionStatus === "pending" && !busy &&
@@ -134,6 +166,7 @@ export default function Checkout({ planId, resultPage = false, authenticated = t
           <p>Período pagado hasta {new Intl.DateTimeFormat("es-CL", { dateStyle: "long", timeStyle: "short", timeZone: "America/Santiago" }).format(new Date(status.paidUntil))}. El acceso requiere un período vigente.</p> :
           <p>Esta compra no tiene un período pagado vigente. Revisa el estado del pago antes de volver a comprar.</p>)}
         {status.state === "cancelled" && <p>La suscripción está cancelada y no tendrá nuevas renovaciones.</p>}
+        {status.promoState === "reserved" && <p>El código mantiene un uso reservado mientras verificamos el pago. Si cancelaste sin pagar, se libera después de comprobar que no hay pagos pendientes; puede tardar al menos 24 horas.</p>}
         {!terminal && <p>El resultado se actualiza automáticamente. Autorizar la suscripción no equivale a aprobar el pago.</p>}
         <small className={styles.reference}>Referencia: {status.reference}{status.paymentId && <><br />Pago: {status.paymentId}</>}</small>
       </div>}

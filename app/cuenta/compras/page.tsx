@@ -11,6 +11,7 @@ export default async function PurchasesPage() {
     {attempts.map(attempt => <article className="editor-card" key={attempt.id}>
       <h2>{isPlan(attempt.plan) ? plans[attempt.plan].name : attempt.plan} · {attempt.quantity} NFC</h2>
       <p>{attempt.mode === "test" ? "Compra de prueba" : "Compra real"}{attempt.state === "cancelled" && " · Renovación cancelada"}</p>
+      {attempt.promo_code && <p>Código {attempt.promo_code} · {pesos(attempt.unit_net ?? 0)} + IVA por NFC al mes. Precio conservado durante la suscripción.</p>}
       {attempt.mode === "production" && attempt.paid_until && <p>Período pagado hasta {new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeZone: "America/Santiago" }).format(new Date(attempt.paid_until))}.</p>}
       {attempt.billing_blocked && <p>Servicio suspendido por contracargo.</p>}
       <p>{pesos(attempt.total_amount ?? 0)} con IVA · {attempt.fulfilled_at ? "NFC asignados" : attempt.state === "cancelled" ? "Cancelada" : attempt.state === "failed" ? "No completada" : "En proceso"}</p>

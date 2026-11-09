@@ -5,6 +5,7 @@ import { checkoutAccount } from "@/lib/checkout/account";
 import { checkoutStatus, startCheckout, cancelCheckout } from "@/lib/checkout/mercadopago";
 import { getAttempt, findAttempt, listAttempts, purchaseFromAttempt } from "@/lib/checkout/store";
 import { isPlan, isNfcQuantity, maxNfcQuantity } from "@/lib/pricing";
+import { normalizePromoCode, quotePromotion, purchasePrice } from "@/lib/checkout/promotions";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -25,29 +26,38 @@ async function handle(request: Request) {
       if (latest) session = purchaseFromAttempt(latest);
     }
     if (request.method === "POST") {
-      if (!request.headers.get("content-type")?.startsWith("application/json") || Number(request.headers.get("content-length")) > 300) throw new CheckoutError("Solicitud inválida.");
+      if (!request.headers.get("content-type")?.startsWith("application/json") || Number(request.headers.get("content-length")) > 600) throw new CheckoutError("Solicitud inválida.");
       const raw = await request.text();
-      if (raw.length > 300) throw new CheckoutError("Solicitud inválida.");
+      if (raw.length > 600) throw new CheckoutError("Solicitud inválida.");
       let body;
       try { body = JSON.parse(raw); } catch { throw new CheckoutError("Solicitud inválida."); }
       if (!body || typeof body !== "object") throw new CheckoutError("Solicitud inválida.");
-      if (body.action === "prepare") {
-        if (!checkoutMode()) throw new CheckoutError("Las compras nuevas están deshabilitadas.", 503);
+      if (body.action === "quote" || body.action === "prepare") {
+        const mode = checkoutMode();
+        if (!mode) throw new CheckoutError("Las compras nuevas están deshabilitadas.", 503);
         if (!isPlan(body.plan)) throw new CheckoutError("Selecciona un plan válido.");
         const quantity = body.quantity === undefined ? 1 : body.quantity;
         if (!isNfcQuantity(quantity)) throw new CheckoutError(`Selecciona una cantidad entera entre 1 y ${maxNfcQuantity} NFC.`);
-        const attempt = session ? await getAttempt(session) : null;
-        const changed = session && (session.plan !== body.plan || session.quantity !== quantity);
-        if (!session || session.mode !== checkoutMode() || attempt?.fulfilled_at || attempt?.state === "cancelled" || attempt?.state === "failed" || (!attempt && changed)) {
-          session = await newSession(body.plan, quantity, origin, user.id, user.email!);
-        } else if (changed) {
-          throw new CheckoutError("Tienes otra compra en curso. Revisa su resultado y cancélala antes de cambiar el plan o la cantidad.", 409);
+        const code = normalizePromoCode(body.promoCode);
+        if (body.action === "quote") {
+          const promotion = await quotePromotion(code, body.plan, user.id, mode);
+          return Response.json({ ...purchasePrice(body.plan, quantity, promotion), promoCode: promotion?.promoCode ?? "" }, { headers });
         }
-        return Response.json({ plan: session.plan, quantity: session.quantity }, { headers });
+        const attempt = session ? await getAttempt(session) : null;
+        const changed = session && (session.plan !== body.plan || session.quantity !== quantity || (session.promoCode ?? "") !== code);
+        if (!session || session.mode !== checkoutMode() || !attempt || attempt.fulfilled_at || attempt.state === "cancelled" || attempt.state === "failed") {
+          const promotion = await quotePromotion(code, body.plan, user.id, mode);
+          if (body.expectedTotal !== purchasePrice(body.plan, quantity, promotion).totalAmount) throw new CheckoutError("El precio cambió. Revisa el total y vuelve a aplicar el código antes de pagar.", 409);
+          session = await newSession(body.plan, quantity, origin, user.id, user.email!, promotion);
+        } else if (changed) {
+          throw new CheckoutError("Tienes otra compra en curso. Revisa su resultado y cancélala antes de cambiar el plan, la cantidad o el código.", 409);
+        }
+        if (body.expectedTotal !== session.totalAmount) throw new CheckoutError("El total no coincide con tu compra. Recarga la página antes de pagar.", 409);
+        return Response.json({ plan: session.plan, quantity: session.quantity, totalAmount: session.totalAmount, unitNet: session.unitNet, promoCode: session.promoCode }, { headers });
       }
       if (!session) throw new CheckoutError("Inicia la compra desde la página de precios.", 401);
       if (body.action === "pay") {
-        if (body.plan !== session.plan || body.quantity !== session.quantity) {
+        if (body.plan !== session.plan || body.quantity !== session.quantity || normalizePromoCode(body.promoCode) !== (session.promoCode ?? "") || body.expectedTotal !== session.totalAmount) {
           throw new CheckoutError("La selección cambió. Recarga la página para revisar el plan y la cantidad antes de pagar.", 409);
         }
         await startCheckout(session);
