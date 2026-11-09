@@ -1,4 +1,7 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { authReturnPath } from "@/lib/auth-return";
+import { checkoutEnabled } from "@/lib/checkout/config";
 
 import { SubmitButton } from "@/components/submit-button";
 import { getAccount } from "@/lib/auth";
@@ -6,16 +9,17 @@ import { getAccount } from "@/lib/auth";
 import { signIn } from "./actions";
 
 type LoginPageProps = {
-  searchParams: Promise<{ error?: string; password_changed?: string }>;
+  searchParams: Promise<{ error?: string; password_changed?: string; next?: string }>;
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const [{ error, password_changed }, account] = await Promise.all([
+  const [{ error, password_changed, next: rawNext }, account] = await Promise.all([
     searchParams,
     getAccount(),
   ]);
+  const next = authReturnPath(rawNext);
   if (account?.profile.is_active) {
-    redirect("/panel");
+    redirect(next);
   }
 
   return (
@@ -38,12 +42,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <section className="login-panel">
         <div className="login-card">
           <h2>Entra a TOCA</h2>
-          <p className="muted">Usa la cuenta que te entregó el administrador.</p>
+          <p className="muted">Ingresa con el correo y la contraseña de tu cuenta de TOCA.</p>
           {password_changed && <p className="notice success" role="status">Contraseña actualizada. Entra con tu nueva contraseña.</p>}
 
           {error ? <div className="form-error" role="alert">{error}</div> : null}
 
           <form action={signIn} className="form-stack">
+            <input type="hidden" name="next" value={next} />
             <label>
               Correo
               <input
@@ -60,6 +65,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             </label>
             <SubmitButton pendingLabel="Entrando…">Entrar</SubmitButton>
           </form>
+          {checkoutEnabled() && <p><Link href={`/registro?next=${encodeURIComponent(next)}`}>Crear cuenta o confirmar mi correo</Link></p>}
         </div>
       </section>
     </main>

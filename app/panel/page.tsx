@@ -22,6 +22,7 @@ export default async function DashboardPage({ searchParams }: {
   const pageUrl = (value: number) => `/panel?page=${value}`;
   return <main className="panel-main" id="main-content">
     <TrafficChart data={data} />
+    <p><Link href="/cuenta/compras">Mis compras</Link> · <Link href="/precios">Comprar NFC</Link></p>
     <section className="nfc-section" aria-labelledby="nfc-title">
       <div className="panel-heading"><h2 id="nfc-title">NFC</h2>{isAdmin && <Link className="button button-primary" href="/panel/nuevo">Agregar NFC</Link>}</div>
       {query.created && <p className="notice success" role="status">Enlace creado. Ya puedes copiarlo a NFC Tools.</p>}
@@ -31,7 +32,7 @@ export default async function DashboardPage({ searchParams }: {
         <div className="nfc-columns" aria-hidden="true"><span>{isAdmin ? "Nombre / Propietario" : "Nombre"}</span><span>Destino actual</span><span>Visitas del mes</span><span>Estado</span><span /></div>
         <div className="link-list">{rows.map(link => <NfcRow key={link.id} link={link} owner={isAdmin ? owners.find(owner => owner.id === link.owner_id)?.name ?? "Sin perfil" : undefined} tocaUrl={`${siteUrl}/t/${link.slug}`} />)}</div>
       </> : <div className="empty-state"><h3>{data.linkCount === 0 ? "Todavía no tienes NFC" : "No hay NFC en esta página"}</h3>
-        <p>{data.linkCount === 0 ? isAdmin ? "Agrega un NFC y asígnalo a su propietario." : "El administrador debe asignarte un NFC para comenzar." : "Vuelve a la primera página para ver tus NFC."}</p>
+        <p>{data.linkCount === 0 ? isAdmin ? "Agrega un NFC y asígnalo a su propietario." : "Tus NFC aparecerán aquí cuando se confirme el pago de tu compra." : "Vuelve a la primera página para ver tus NFC."}</p>
         {data.linkCount > 0 && <Link className="text-button" href="/panel">Ver primera página</Link>}
       </div>)}
       <nav className="pagination" aria-label="Páginas de NFC">

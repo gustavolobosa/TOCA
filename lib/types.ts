@@ -23,6 +23,7 @@ export type NfcLink = {
   created_at: string;
   updated_at: string;
   requires_configuration: boolean;
+  is_test: boolean;
 };
 
 export type NfcLinkSummary = NfcLink & {

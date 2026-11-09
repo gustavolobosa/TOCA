@@ -51,7 +51,7 @@ export function NfcRow({ link, owner, tocaUrl }: { link: NfcLinkSummary & { visi
   return <article className="nfc-item" aria-label={link.name}>
     <div className="nfc-row">
       <h3 className="nfc-identity"><button type="button" aria-expanded={open} aria-controls={`nfc-detail-${link.id}`} onClick={() => setOpen(!open)}>
-        <Icon name="chevron" className={open ? "expanded" : ""} /><span><span className="nfc-name">{link.name}</span>{owner && <small>{owner}</small>}</span>
+        <Icon name="chevron" className={open ? "expanded" : ""} /><span><span className="nfc-name">{link.name}</span>{owner && <small>{owner}</small>}{link.is_test && <small>NFC de prueba</small>}</span>
       </button></h3>
       <p className="nfc-destination"><span className="mobile-label">Destino actual</span>{destinationSummary(link)}</p>
       <p className="nfc-visits"><span className="mobile-label">Visitas del mes</span><span aria-label={`${link.visits} visitas en el mes`}>{String(link.visits).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}</span></p>

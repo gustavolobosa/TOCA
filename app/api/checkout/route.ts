@@ -1,7 +1,9 @@
 import { CheckoutError, checkoutOrigin } from "@/lib/checkout/config";
 import { readSession, newSession } from "@/lib/checkout/session";
+import type { CheckoutPurchase } from "@/lib/checkout/session";
+import { checkoutAccount } from "@/lib/checkout/account";
 import { checkoutStatus, startCheckout, cancelCheckout } from "@/lib/checkout/mercadopago";
-import { getAttempt } from "@/lib/checkout/store";
+import { getAttempt, findAttempt, listAttempts, purchaseFromAttempt } from "@/lib/checkout/store";
 import { isPlan, isNfcQuantity, maxNfcQuantity } from "@/lib/pricing";
 
 export const runtime = "nodejs";
@@ -11,7 +13,17 @@ async function handle(request: Request) {
   try {
     const origin = checkoutOrigin(request.headers.get("host"));
     if (request.method !== "GET" && request.headers.get("origin") !== origin) throw new CheckoutError("Origen no permitido.", 403);
-    let session = await readSession(origin);
+    const { user } = await checkoutAccount();
+    let session: CheckoutPurchase | null = await readSession(origin, user.id);
+    const purchaseId = new URL(request.url).searchParams.get("compra");
+    if (purchaseId) {
+      const purchase = await findAttempt(purchaseId, user.id);
+      if (!purchase) throw new CheckoutError("Compra no encontrada.", 404);
+      session = purchaseFromAttempt(purchase);
+    } else if (!session) {
+      const latest = (await listAttempts(user.id))[0];
+      if (latest) session = purchaseFromAttempt(latest);
+    }
     if (request.method === "POST") {
       if (!request.headers.get("content-type")?.startsWith("application/json") || Number(request.headers.get("content-length")) > 300) throw new CheckoutError("Solicitud inválida.");
       const raw = await request.text();
@@ -25,8 +37,8 @@ async function handle(request: Request) {
         if (!isNfcQuantity(quantity)) throw new CheckoutError(`Selecciona una cantidad entera entre 1 y ${maxNfcQuantity} NFC.`);
         const attempt = session ? await getAttempt(session) : null;
         const changed = session && (session.plan !== body.plan || session.quantity !== quantity);
-        if (!session || attempt?.state === "cancelled" || attempt?.state === "failed" || (!attempt && changed)) {
-          session = await newSession(body.plan, quantity, origin);
+        if (!session || attempt?.fulfilled_at || attempt?.state === "cancelled" || attempt?.state === "failed" || (!attempt && changed)) {
+          session = await newSession(body.plan, quantity, origin, user.id);
         } else if (changed) {
           throw new CheckoutError("Tienes otra compra en curso. Revisa su resultado y cancélala antes de cambiar el plan o la cantidad.", 409);
         }

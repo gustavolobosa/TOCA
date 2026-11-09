@@ -1,113 +1,149 @@
-# Mercado Pago de prueba en el sitio de producción
+# Registro, compra y asignación de NFC
 
-El modo de Mercado Pago se controla con `TOCA_CHECKOUT_MODE`, independientemente de si TOCA corre en Production, Preview o desarrollo local. Usa el proyecto Supabase actual de TOCA; no necesitas un segundo proyecto.
+Flujo: elegir plan y cantidad → crear cuenta con correo y contraseña (o ingresar) → confirmar correo → pagar en Mercado Pago → recibir los NFC en el panel.
 
-- `test`: habilita el checkout con el vendedor y comprador ficticios de Mercado Pago, también en Production.
-- `off` o variable ausente: deshabilita el checkout y conserva la consulta por WhatsApp.
-- Los cobros reales todavía no están implementados. Cambiar el flag a `live` no los habilita.
+`TOCA_CHECKOUT_MODE=test` habilita este flujo también en Production, usando el Supabase real y las credenciales del vendedor ficticio de Mercado Pago. `off` deshabilita el checkout y el registro. Los cobros reales todavía no están implementados.
 
-Con `test` en Production, los visitantes del sitio también verán el checkout y su aviso de prueba. Los registros se guardan en la base real, dentro de una tabla exclusiva para intentos ficticios.
+La cuenta de **TOCA usa un correo al que el cliente tenga acceso** y su propia contraseña. La cuenta **compradora de Mercado Pago sigue siendo ficticia**. No se vinculan usuarios por coincidencias de correo: el propietario sale de la sesión autenticada de TOCA.
 
-Flujo: Inicio → Precios → elegir cantidad y confirmar plan → checkout de Suscripciones de Mercado Pago → resultado automático en TOCA. Se pueden comprar de 1 a 100 NFC por intento. En esta etapa no se crean cuentas, no se activan NFC y no se generan envíos ni documentos tributarios.
+## 1. Aplicar la migración antes de desplegar
 
-| Plan | Neto | IVA | Total cobrado | Renovación |
-| --- | ---: | ---: | ---: | --- |
-| Mensual | $2.200 | $418 | $2.618 | Cada mes |
-| Anual | $22.000 | $4.180 | $26.180 | Cada 12 meses |
+Si ya ejecutaste las migraciones de la tabla de intentos y de cantidad, aplica solamente:
 
-El año se paga por adelantado: 12 meses por el precio de 10. Los importes se definen una sola vez en `lib/pricing.ts`; el servidor nunca acepta un precio enviado por el navegador.
+`supabase/migrations/20261109132803_checkout_accounts_and_nfc_fulfillment.sql`
 
-Los precios de la tabla son por NFC. El neto, el IVA y el total aumentan linealmente con la cantidad. Ejemplo: 3 NFC cuestan $6.600 + $1.254 de IVA = $7.854 mensuales, o $66.000 + $12.540 de IVA = $78.540 anuales. La cantidad se elige antes de abrir Mercado Pago; no modifica una suscripción existente. Para cambiarla después de iniciar una prueba, cancela esa suscripción y comienza otra.
+En una instalación nueva, primero se necesitan todas las migraciones anteriores de TOCA, incluidas `20261109130000_checkout_test_attempts.sql` y `20261109131003_checkout_nfc_quantity.sql`.
 
-## 1. Preparar la tabla en el Supabase actual
+La nueva migración:
 
-El registro reserva cada intento y recupera la misma suscripción aunque Vercel cambie de instancia o haya un corte de conexión. Reutiliza `SUPABASE_URL`, `SUPABASE_SECRET_KEY` y la validación del proyecto que ya usa TOCA.
+- Asocia las compras nuevas a `profiles.id` y conserva su importe y origen.
+- Deja las compras anteriores sin propietario. No genera NFC retroactivamente ni intenta adivinar a quién pertenecen.
+- Agrega a los NFC el identificador de compra, su número de unidad y `is_test`.
+- Crea dos funciones accesibles únicamente por `service_role`: preparar el perfil de un usuario verificado y asignar todas las unidades de una compra aprobada.
+- Conserva los permisos, propietarios y contraseñas existentes. Los usuarios creados por el administrador mantienen su obligación de cambiar la contraseña temporal.
+- Conserva las columnas anteriores de la vista del panel y agrega la marca de prueba al final.
 
-En el SQL Editor del **proyecto Supabase real de TOCA**, ejecuta una sola vez el contenido de:
+**Este archivo está preparado, no ejecutado por Codex.**
 
-`supabase/migrations/20261109130000_checkout_test_attempts.sql`
+## 2. Configurar Supabase Auth
 
-Después aplica `supabase/migrations/20261109131003_checkout_nfc_quantity.sql`. Si ya creaste la tabla en la etapa anterior, ejecuta **solo este segundo archivo antes de desplegar el selector de cantidad**. Agrega `quantity` con valor inicial 1 para los registros existentes y restringe su valor a enteros entre 1 y 100. Conserva los pagos y suscripciones anteriores de una unidad.
+En el proyecto actual de TOCA:
 
-Este archivo crea únicamente `public.checkout_test_attempts`, activa RLS y restringe el acceso al servidor. No cambia perfiles, usuarios ni NFC existentes. Ejecuta únicamente este archivo si las migraciones anteriores ya están aplicadas.
+1. Habilita el registro de nuevos usuarios y el proveedor **Email / Password**.
+2. Activa **Confirm email**. El registro requiere verificar el correo antes del pago.
+3. Configura **Custom SMTP** con un remitente de tu dominio para entregar correos a clientes. El servidor predeterminado de Supabase restringe la entrega a miembros del equipo; no es suficiente para clientes externos.
+4. En **Email Templates → Confirm signup**, incluye el código `{{ .Token }}`. La pantalla de TOCA permite introducir ese código, sin depender de abrir enlaces de confirmación en el mismo dispositivo.
 
-Conserva las variables de Supabase actuales. Ya no se utilizan las variables `CHECKOUT_SUPABASE_URL` ni `CHECKOUT_SUPABASE_SECRET_KEY` de la propuesta anterior.
+Ejemplo del contenido de la plantilla:
 
-La migración está preparada en el repositorio; **no se ha aplicado automáticamente**.
+```html
+<h2>Confirma tu cuenta de TOCA</h2>
+<p>Ingresa este código en la pantalla donde te registraste:</p>
+<p><strong>{{ .Token }}</strong></p>
+<p>Si no solicitaste una cuenta, ignora este mensaje.</p>
+```
 
-## 2. Configurar Vercel
+Conserva los límites de envío e intentos de Supabase. Usa como **Site URL** el dominio HTTPS de TOCA. Los clientes con cuenta existente ingresan con correo y contraseña; no vuelven a registrarse.
 
-En el proyecto TOCA, abre **Settings → Environment Variables**. Agrega las siguientes variables con alcance **Production**; puedes aplicarlas también a Preview si lo necesitas:
+Referencias: [contraseñas y confirmación](https://supabase.com/docs/guides/auth/passwords), [plantillas](https://supabase.com/docs/guides/auth/auth-email-templates), [SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
+
+## 3. Variables en Vercel
+
+En **Settings → Environment Variables → Production** (y Preview si corresponde), conserva:
 
 | Variable | Valor |
 | --- | --- |
 | `TOCA_CHECKOUT_MODE` | `test` |
-| `MERCADOPAGO_TEST_ACCESS_TOKEN` | El token del vendedor ficticio que ya usamos localmente; está en `.env.local`. |
-| `CHECKOUT_SESSION_SECRET` | Un secreto aleatorio nuevo de al menos 32 caracteres. |
+| `MERCADOPAGO_TEST_ACCESS_TOKEN` | Token del vendedor ficticio de TOCA, ID `3828192200` |
+| `CHECKOUT_SESSION_SECRET` | Secreto aleatorio estable de al menos 32 caracteres |
+| `NEXT_PUBLIC_SITE_URL` | Origen HTTPS de TOCA, sin rutas |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Valores públicos del proyecto actual |
+| `SUPABASE_URL`, `SUPABASE_SECRET_KEY` | Valores de servidor del mismo proyecto |
+| `ADMIN_USER_ID` | Administrador actual, sin cambios |
 
-Puedes generar el secreto de sesión en tu terminal con `openssl rand -hex 32`. Pégalo en Vercel y consérvalo entre despliegues de la misma prueba. Marca las claves y tokens como sensibles. Ninguna de estas variables lleva el prefijo `NEXT_PUBLIC_`.
+**Variable nueva:** `MERCADOPAGO_WEBHOOK_SECRET`, con la firma secreta que muestra la configuración de Webhooks de la aplicación del vendedor ficticio. No es el Access Token y no debes inventar su valor.
 
-Para este checkout alojado en Mercado Pago **no se necesita Public Key**, Client Secret ni contraseña del comprador en Vercel. Usa el token del vendedor ficticio, no el de la empresa real: el código comprueba el usuario vendedor `3828192200`, su país y su condición de cuenta de prueba antes de crear o cancelar suscripciones. El prefijo `APP_USR` por sí solo no indica si la cuenta es real o ficticia.
+Ningún token ni clave secreta lleva `NEXT_PUBLIC_`. No necesitas Public Key para el checkout alojado. `CHECKOUT_BASE_URL` es opcional para un alias adicional al sitio y las URLs automáticas de Vercel.
 
-Mantén las variables normales de TOCA. Verifica que `NEXT_PUBLIC_SITE_URL` sea el origen HTTPS de tu sitio real, sin rutas: este dominio se admite para iniciar la compra y recibir el retorno. `SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_URL` deben seguir apuntando al mismo proyecto real.
+Las variables de `.env.local` no se suben a Vercel. Después de guardar variables y publicar el código, despliega nuevamente. [Variables por entorno](https://vercel.com/docs/environment-variables).
 
-Las URLs automáticas de Vercel (`VERCEL_URL` y `VERCEL_BRANCH_URL`) también se admiten. No necesitas falsificar `VERCEL_ENV` ni cambiar `NODE_ENV`: el modo de Mercado Pago depende exclusivamente del flag.
+## 4. Configurar Webhooks en Mercado Pago
 
-Opcional: para otro alias agrega `CHECKOUT_BASE_URL=https://tu-alias` (sin rutas, parámetros ni fragmentos). No hace falta si usas el dominio de `NEXT_PUBLIC_SITE_URL`. La URL de retorno conserva el mismo dominio desde el que empezaste la compra.
+En la **misma aplicación del vendedor de prueba que emite las suscripciones**, configura esta URL HTTPS:
 
-## 3. Desplegar y activar el flag
+`https://TU-DOMINIO/api/mercadopago/webhook`
 
-Incorpora estos cambios a la rama que Vercel usa para Production y despliega después de guardar las variables. Tú ejecutas los comandos de Git; este cambio no se publicó automáticamente.
+Activa los eventos de **Pagos** y **Planes y suscripciones**:
 
-Si el código ya estaba desplegado, haz **Redeploy** después de cambiar las variables. Para deshabilitar la compra ficticia, cambia `TOCA_CHECKOUT_MODE=off` y vuelve a desplegar. Los precios nuevos permanecen en la página.
+- `payment`
+- `subscription_preapproval`
+- `subscription_authorized_payment`
 
-Usa siempre el mismo dominio y navegador durante la compra; volver a otro hostname o borrar las cookies impide recuperar la sesión. Si tu despliegue tiene protección de Vercel, autoriza primero el acceso desde ese navegador.
+Usa la configuración correspondiente a esa cuenta de prueba. No deduzcas el ambiente por el prefijo `APP_USR` del token: el servidor verifica que sea el vendedor ficticio esperado. Guarda su firma secreta en `MERCADOPAGO_WEBHOOK_SECRET` y vuelve a desplegar.
 
-Documentación oficial: [variables por entorno](https://vercel.com/docs/environment-variables), [entornos de despliegue](https://vercel.com/docs/deployments/environments) y [variables automáticas del sistema](https://vercel.com/docs/environment-variables/system-environment-variables).
+La URL debe ser accesible para Mercado Pago sin una sesión de Vercel. Si proteges el despliegue, configura una excepción específica para este endpoint; no publiques secretos de bypass en la página.
 
-## 4. Configuración en Mercado Pago
+El endpoint valida `x-signature` y `x-request-id`, y contrasta el recurso firmado con el cuerpo. Luego consulta a Mercado Pago por API para comprobar vendedor, referencia, moneda, importe y pago aprobado. Una solicitud sin firma válida se rechaza; un simulador que no aporte un recurso real coincidente no puede crear NFC.
 
-Usa la aplicación de Suscripciones y las cuentas ficticias ya creadas. No necesitas crear un plan manual en el panel: TOCA crea la suscripción mensual o anual por API con el importe del servidor y la URL de retorno del sitio.
+Los errores temporales devuelven 503 para permitir reintentos. La consulta automática desde TOCA usa la misma verificación y puede completar una asignación pendiente. Así el flujo no depende exclusivamente de que el comprador mantenga abierta la página.
 
-No hay que registrar un webhook para esta fase. La página consulta automáticamente a TOCA y el servidor verifica la suscripción y el pago directamente en Mercado Pago. La autorización de la suscripción por sí sola nunca muestra “pago confirmado”. El navegador tampoco puede confirmar el pago mediante parámetros de retorno.
+Referencia: [Webhooks y firma](https://www.mercadopago.cl/developers/en/docs/checkout-pro-preferences/additional-content/notifications/webhooks).
 
-Este mecanismo actualiza el resultado mientras la página está abierta; al volver a abrirla consulta otra vez. **No procesa renovaciones ni activa servicios en segundo plano**. Esa parte requerirá notificaciones verificadas y persistencia de pagos en la etapa de activación.
+## 5. Qué ocurre al aprobar el pago
 
-Referencia oficial: [pruebas de integración, incluida Suscripciones](https://www.mercadopago.cl/developers/es/news/2023/11/16/Questions-on-how-to-test-your-integration--).
+El servidor llama una operación atómica que bloquea la compra, comprueba los datos verificados del pago y crea exactamente la cantidad contratada. Cada NFC tiene:
 
-## 5. Hacer la prueba completa
+- Propietario: el usuario de TOCA que inició la compra.
+- Nombre inicial: `NFC 1`, `NFC 2`, etc.
+- Enlace único de TOCA y destino inicial `https://example.com`.
+- Estado activo, editable desde el panel, con historial del destino inicial.
+- Marca `is_test=true`, visible como **NFC de prueba**.
 
-1. Abre el sitio de TOCA → **Ver planes y contratar** → elige mensual o anual.
-2. Elige la cantidad, verifica el total con IVA y presiona **Suscribirme con Mercado Pago**. El precio que se envía a Mercado Pago se recalcula en el servidor y la cantidad se conserva en la sesión firmada y en la tabla de intentos.
-3. En Mercado Pago usa la sesión del **comprador ficticio** o el flujo de invitado con su correo. Si tienes iniciada la sesión de tu cuenta real o del vendedor, cambia a la del comprador de prueba. Esto separa las cuentas de prueba; no obliga a un futuro cliente real a cerrar su sesión.
-4. Introduce la tarjeta ficticia. No uses saldo ni tarjetas reales.
-5. Confirma y vuelve a TOCA desde Mercado Pago. Si no vuelve automáticamente, abre `/comprar/resultado` en el mismo dominio y navegador.
-6. Espera **Pago de prueba confirmado**. La consulta se repite automáticamente, con intervalos de 5 a 30 segundos; se pausa si ocultas la pestaña o pierdes conexión. Puede tardar mientras Mercado Pago procesa el primer cobro.
-7. Guarda la referencia y el ID del pago. Cancela la suscripción con el botón de TOCA para detener futuras renovaciones de prueba. La cancelación no representa una devolución del primer pago.
-8. Repite con el otro plan y con varias unidades. Verifica $2.618 mensual y $26.180 anual por NFC; para 3 NFC deben aparecer $7.854 y $78.540, respectivamente. Prueba también con la sesión del comprador ficticio ya iniciada.
+Si se repite una notificación o una consulta, no se crean unidades adicionales. Si falla una inserción, se revierte la operación completa. Las renovaciones tampoco vuelven a crear NFC.
 
-| Dato | Valor de prueba |
+**Mis compras** permite recuperar las últimas 50 compras desde otra sesión o navegador. Cada resultado está protegido por el usuario autenticado; conocer el ID de una compra no permite verla ni cancelarla desde otra cuenta.
+
+Los NFC actuales de los usuarios no se reasignan ni se sustituyen. Un usuario puede realizar otra compra después de completarse la anterior, conservando sus suscripciones previas.
+
+Esta etapa asigna los registros digitales y permite configurarlos; no graba ni entrega etiquetas físicas, ni emite documentos tributarios. El cierre por impago, devoluciones o vencimiento del período no está automatizado aquí: debe resolverse en la etapa de cobros reales. Cancelar la suscripción de prueba detiene sus renovaciones en Mercado Pago y conserva sus NFC de prueba.
+
+## 6. Prueba completa
+
+1. Aplica la migración, configura Auth/SMTP y Webhooks, y despliega.
+2. Abre TOCA sin sesión, selecciona un plan y una cantidad (por ejemplo, 3).
+3. Presiona **Crear cuenta y continuar**, usa un correo real al que tengas acceso y elige una contraseña. Introduce el código recibido; deben conservarse el plan y la cantidad.
+4. Presiona **Suscribirme con Mercado Pago** y paga con el comprador y tarjeta ficticios.
+5. Al regresar, espera la confirmación y **Tus 3 NFC están listos**. Entra al panel: deben existir exactamente 3 nuevos NFC, propios y dirigidos a `https://example.com`.
+6. Recarga el resultado y vuelve desde **Mis compras**: deben seguir siendo los mismos 3. Verifica que otra cuenta no pueda abrir ese resultado ni editar esos NFC.
+7. Prueba otra compra cerrando la pestaña después de confirmar en Mercado Pago: el webhook debe completar la asignación. Revisa su entrega en el panel de Mercado Pago y luego entra a TOCA.
+8. Cancela las suscripciones de prueba para detener renovaciones. No borres registros para forzar reintentos; una respuesta incierta puede corresponder a una suscripción ya creada.
+
+| Plan por NFC | Neto | IVA | Total |
+| --- | ---: | ---: | ---: |
+| Mensual | $2.200 | $418 | $2.618 |
+| Anual (12 meses por el precio de 10) | $22.000 | $4.180 | $26.180 |
+
+De 1 a 100 NFC por compra. El cálculo es lineal: 3 NFC cuestan $7.854 mensuales o $78.540 anuales con IVA. Los precios se calculan en el servidor y quedan guardados en la compra.
+
+| Dato de Mercado Pago | Valor ficticio |
 | --- | --- |
-| Correo comprador | `test_user_8501473770136902242@testuser.com` |
 | Usuario comprador | `TESTUSER8501473770136902242` |
-| Código de verificación de la cuenta ficticia | `192198` |
+| Correo comprador | `test_user_8501473770136902242@testuser.com` |
+| Código de verificación de esa cuenta | `192198` |
 | Mastercard | `5416 7526 0258 2580` |
-| Vencimiento | `11/30` |
-| CVV | `123` |
+| Vencimiento / CVV | `11/30` / `123` |
 | Titular | `APRO` |
-| Documento, si se solicita | Tipo `Otro`, número `123456789` |
+| Documento, si se solicita | `Otro`, `123456789` |
 
-Estos datos también aparecen en “Datos para probar el pago” dentro de TOCA. [Tarjetas de prueba oficiales](https://www.mercadopago.cl/developers/es/docs/your-integrations/test/cards).
+No uses el correo ficticio de Mercado Pago para registrarte en TOCA: no podrás recibir el código de verificación de TOCA.
 
 ## Si algo falla
 
-- **Solo aparece WhatsApp:** verifica `TOCA_CHECKOUT_MODE=test`, alcance Production y que hiciste un despliegue después de guardar las variables.
-- **No se pudo acceder al registro:** revisa las variables habituales de Supabase y que `checkout_test_attempts` exista en ese proyecto.
-- **Dominio no permitido:** revisa `NEXT_PUBLIC_SITE_URL`. Para un alias adicional configura `CHECKOUT_BASE_URL` y vuelve a desplegar.
-- **Sesión no encontrada o vencida:** usa el mismo navegador y dominio. La sesión dura 24 horas. Antes de repetir una compra, revisa y cancela la anterior en la cuenta ficticia de Mercado Pago.
-- **Creación en verificación:** hubo una respuesta incierta. TOCA busca la suscripción por su referencia y evita repetir el POST de creación. Si queda en ese estado, conserva la referencia y revisa el registro y Mercado Pago antes de empezar otra compra. No borres el registro para forzar un reintento: podría existir una suscripción creada.
-- **Autorizada pero sin pago aprobado:** sigue esperando el resultado automático; aún no hay confirmación de cobro.
+- **No llega el código:** revisa Confirm email, plantilla con `{{ .Token }}`, remitente SMTP, spam y límites de envío de Supabase. Puedes reenviarlo desde TOCA.
+- **Correo confirmado pero sin perfil:** la cuenta queda en Auth; después de corregir la migración puedes iniciar sesión para completar el perfil sin registrarla otra vez.
+- **Pago aprobado pero NFC pendientes:** la pantalla continúa reintentando. Revisa la migración, la actividad del usuario y los registros del webhook. No vuelvas a pagar esa misma compra.
+- **Webhook 401:** verifica firma secreta, URL y aplicación del vendedor. No se aceptan notificaciones sin firma.
+- **Webhook 503:** revisa configuración y disponibilidad de Supabase/Mercado Pago. La consulta desde Mis compras también permite reconciliar el resultado.
+- **Pruebas anteriores a esta versión:** permanecen sin usuario asociado y no generan NFC. Para probar la asignación, inicia una compra nueva con sesión de TOCA.
 
-La protección contra duplicados cubre el mismo intento y su cookie, incluso entre instancias de Vercel. No identifica a una misma persona entre navegadores ni después de borrar cookies; ese control corresponde a la futura compra asociada a una cuenta.
-
-La comprobación definitiva pendiente es completar ambos pagos ficticios en el sitio configurado. Compilar y revisar la interfaz local no sustituye esa prueba con Vercel, Supabase y Mercado Pago conectados.
+La comprobación con registro, correo, pago y asignación reales del entorno de prueba requiere aplicar la migración y configurar los servicios; no se ejecuta automáticamente durante la revisión local del código.
