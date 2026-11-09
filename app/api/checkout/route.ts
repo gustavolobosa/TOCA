@@ -2,7 +2,7 @@ import { CheckoutError, checkoutOrigin } from "@/lib/checkout/config";
 import { readSession, newSession } from "@/lib/checkout/session";
 import { checkoutStatus, startCheckout, cancelCheckout } from "@/lib/checkout/mercadopago";
 import { getAttempt } from "@/lib/checkout/store";
-import { isPlan } from "@/lib/pricing";
+import { isPlan, isNfcQuantity, maxNfcQuantity } from "@/lib/pricing";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -21,16 +21,24 @@ async function handle(request: Request) {
       if (!body || typeof body !== "object") throw new CheckoutError("Solicitud inválida.");
       if (body.action === "prepare") {
         if (!isPlan(body.plan)) throw new CheckoutError("Selecciona un plan válido.");
+        const quantity = body.quantity === undefined ? 1 : body.quantity;
+        if (!isNfcQuantity(quantity)) throw new CheckoutError(`Selecciona una cantidad entera entre 1 y ${maxNfcQuantity} NFC.`);
         const attempt = session ? await getAttempt(session) : null;
-        if (!session || attempt?.state === "cancelled" || attempt?.state === "failed" || (!attempt && session.plan !== body.plan)) {
-          session = await newSession(body.plan, origin);
-        } else if (session.plan !== body.plan) {
-          throw new CheckoutError("Tienes otra compra en curso. Revisa su resultado y cancélala antes de cambiar de plan.", 409);
+        const changed = session && (session.plan !== body.plan || session.quantity !== quantity);
+        if (!session || attempt?.state === "cancelled" || attempt?.state === "failed" || (!attempt && changed)) {
+          session = await newSession(body.plan, quantity, origin);
+        } else if (changed) {
+          throw new CheckoutError("Tienes otra compra en curso. Revisa su resultado y cancélala antes de cambiar el plan o la cantidad.", 409);
         }
-        return Response.json({ plan: session.plan }, { headers });
+        return Response.json({ plan: session.plan, quantity: session.quantity }, { headers });
       }
       if (!session) throw new CheckoutError("Inicia la compra desde la página de precios.", 401);
-      if (body.action === "pay") await startCheckout(session);
+      if (body.action === "pay") {
+        if (body.plan !== session.plan || body.quantity !== session.quantity) {
+          throw new CheckoutError("La selección cambió. Recarga la página para revisar el plan y la cantidad antes de pagar.", 409);
+        }
+        await startCheckout(session);
+      }
       else if (body.action === "cancel") await cancelCheckout(session);
       else throw new CheckoutError("Acción inválida.");
     }

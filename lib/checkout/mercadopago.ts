@@ -31,7 +31,7 @@ const reference = (session: CheckoutSession) => `TOCA-TEST-${session.id}`;
 function verifySubscription(subscription: Subscription, session: CheckoutSession) {
   const plan = plans[session.plan];
   if (subscription.external_reference !== reference(session) || String(subscription.collector_id) !== testSellerId ||
-      subscription.auto_recurring.transaction_amount !== plan.total || subscription.auto_recurring.currency_id !== "CLP" ||
+      subscription.auto_recurring.transaction_amount !== plan.total * session.quantity || subscription.auto_recurring.currency_id !== "CLP" ||
       subscription.auto_recurring.frequency !== plan.months || subscription.auto_recurring.frequency_type !== "months") {
     throw new CheckoutError("La suscripción no coincide con el plan comprado.", 403);
   }
@@ -63,9 +63,9 @@ export async function startCheckout(session: CheckoutSession) {
   try {
     const plan = plans[session.plan];
     created = await mp<Subscription>("/preapproval", {
-      reason: `TOCA - ${plan.name} por NFC (IVA incluido) - Prueba`,
+      reason: `TOCA - ${plan.name} - ${session.quantity} NFC (IVA incluido) - Prueba`,
       external_reference: reference(session), payer_email: testBuyerEmail, status: "pending",
-      auto_recurring: { frequency: plan.months, frequency_type: "months", transaction_amount: plan.total, currency_id: "CLP" },
+      auto_recurring: { frequency: plan.months, frequency_type: "months", transaction_amount: plan.total * session.quantity, currency_id: "CLP" },
       back_url: `${session.origin}/comprar/resultado`,
     });
   } catch (error) {
@@ -81,7 +81,7 @@ export async function startCheckout(session: CheckoutSession) {
 }
 export async function checkoutStatus(session: CheckoutSession): Promise<CheckoutStatus> {
   const attempt = await getAttempt(session);
-  const base = { plan: session.plan, reference: reference(session) };
+  const base = { plan: session.plan, quantity: session.quantity, reference: reference(session) };
   if (!attempt) return { ...base, state: "empty" as const };
   if (attempt.state === "failed") return { ...base, state: "failed" as const };
   const subscription = await findSubscription(session, attempt.subscription_id);
@@ -94,7 +94,7 @@ export async function checkoutStatus(session: CheckoutSession): Promise<Checkout
   const paymentId = invoices.results.find(item => item.payment?.id)?.payment?.id;
   const payment = paymentId ? await mp<Payment>(`/v1/payments/${paymentId}`) : null;
   if (payment && (payment.external_reference !== reference(session) || String(payment.collector_id) !== testSellerId ||
-      payment.transaction_amount !== plans[session.plan].total || payment.currency_id !== "CLP" || payment.payer?.email !== testBuyerEmail)) {
+      payment.transaction_amount !== plans[session.plan].total * session.quantity || payment.currency_id !== "CLP" || payment.payer?.email !== testBuyerEmail)) {
     throw new CheckoutError("El pago no coincide con esta compra de prueba.", 403);
   }
   return { ...base, state, subscriptionId: subscription.id, subscriptionStatus: subscription.status,
@@ -103,7 +103,7 @@ export async function checkoutStatus(session: CheckoutSession): Promise<Checkout
 }
 export type CheckoutStatus = {
   state: "empty" | "creating" | "ready" | "failed" | "cancelled";
-  plan?: CheckoutSession["plan"]; reference?: string; subscriptionId?: string; subscriptionStatus?: string;
+  plan?: CheckoutSession["plan"]; quantity?: number; reference?: string; subscriptionId?: string; subscriptionStatus?: string;
   checkoutUrl?: string; paymentId?: number; paymentStatus?: string; paymentDetail?: string;
 };
 export async function cancelCheckout(session: CheckoutSession) {

@@ -8,7 +8,7 @@ El modo de Mercado Pago se controla con `TOCA_CHECKOUT_MODE`, independientemente
 
 Con `test` en Production, los visitantes del sitio también verán el checkout y su aviso de prueba. Los registros se guardan en la base real, dentro de una tabla exclusiva para intentos ficticios.
 
-Flujo: Inicio → Precios → confirmar plan → checkout de Suscripciones de Mercado Pago → resultado automático en TOCA. Se compra un NFC por intento. En esta etapa no se crean cuentas, no se activan NFC y no se generan envíos ni documentos tributarios.
+Flujo: Inicio → Precios → elegir cantidad y confirmar plan → checkout de Suscripciones de Mercado Pago → resultado automático en TOCA. Se pueden comprar de 1 a 100 NFC por intento. En esta etapa no se crean cuentas, no se activan NFC y no se generan envíos ni documentos tributarios.
 
 | Plan | Neto | IVA | Total cobrado | Renovación |
 | --- | ---: | ---: | ---: | --- |
@@ -17,6 +17,8 @@ Flujo: Inicio → Precios → confirmar plan → checkout de Suscripciones de Me
 
 El año se paga por adelantado: 12 meses por el precio de 10. Los importes se definen una sola vez en `lib/pricing.ts`; el servidor nunca acepta un precio enviado por el navegador.
 
+Los precios de la tabla son por NFC. El neto, el IVA y el total aumentan linealmente con la cantidad. Ejemplo: 3 NFC cuestan $6.600 + $1.254 de IVA = $7.854 mensuales, o $66.000 + $12.540 de IVA = $78.540 anuales. La cantidad se elige antes de abrir Mercado Pago; no modifica una suscripción existente. Para cambiarla después de iniciar una prueba, cancela esa suscripción y comienza otra.
+
 ## 1. Preparar la tabla en el Supabase actual
 
 El registro reserva cada intento y recupera la misma suscripción aunque Vercel cambie de instancia o haya un corte de conexión. Reutiliza `SUPABASE_URL`, `SUPABASE_SECRET_KEY` y la validación del proyecto que ya usa TOCA.
@@ -24,6 +26,8 @@ El registro reserva cada intento y recupera la misma suscripción aunque Vercel 
 En el SQL Editor del **proyecto Supabase real de TOCA**, ejecuta una sola vez el contenido de:
 
 `supabase/migrations/20261109130000_checkout_test_attempts.sql`
+
+Después aplica `supabase/migrations/20261109131003_checkout_nfc_quantity.sql`. Si ya creaste la tabla en la etapa anterior, ejecuta **solo este segundo archivo antes de desplegar el selector de cantidad**. Agrega `quantity` con valor inicial 1 para los registros existentes y restringe su valor a enteros entre 1 y 100. Conserva los pagos y suscripciones anteriores de una unidad.
 
 Este archivo crea únicamente `public.checkout_test_attempts`, activa RLS y restringe el acceso al servidor. No cambia perfiles, usuarios ni NFC existentes. Ejecuta únicamente este archivo si las migraciones anteriores ya están aplicadas.
 
@@ -74,13 +78,13 @@ Referencia oficial: [pruebas de integración, incluida Suscripciones](https://ww
 ## 5. Hacer la prueba completa
 
 1. Abre el sitio de TOCA → **Ver planes y contratar** → elige mensual o anual.
-2. Verifica el total con IVA y presiona **Suscribirme con Mercado Pago**.
+2. Elige la cantidad, verifica el total con IVA y presiona **Suscribirme con Mercado Pago**. El precio que se envía a Mercado Pago se recalcula en el servidor y la cantidad se conserva en la sesión firmada y en la tabla de intentos.
 3. En Mercado Pago usa la sesión del **comprador ficticio** o el flujo de invitado con su correo. Si tienes iniciada la sesión de tu cuenta real o del vendedor, cambia a la del comprador de prueba. Esto separa las cuentas de prueba; no obliga a un futuro cliente real a cerrar su sesión.
 4. Introduce la tarjeta ficticia. No uses saldo ni tarjetas reales.
 5. Confirma y vuelve a TOCA desde Mercado Pago. Si no vuelve automáticamente, abre `/comprar/resultado` en el mismo dominio y navegador.
 6. Espera **Pago de prueba confirmado**. La consulta se repite automáticamente, con intervalos de 5 a 30 segundos; se pausa si ocultas la pestaña o pierdes conexión. Puede tardar mientras Mercado Pago procesa el primer cobro.
 7. Guarda la referencia y el ID del pago. Cancela la suscripción con el botón de TOCA para detener futuras renovaciones de prueba. La cancelación no representa una devolución del primer pago.
-8. Repite con el otro plan. Verifica $2.618 mensual y $26.180 anual. Prueba también con la sesión del comprador ficticio ya iniciada.
+8. Repite con el otro plan y con varias unidades. Verifica $2.618 mensual y $26.180 anual por NFC; para 3 NFC deben aparecer $7.854 y $78.540, respectivamente. Prueba también con la sesión del comprador ficticio ya iniciada.
 
 | Dato | Valor de prueba |
 | --- | --- |

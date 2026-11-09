@@ -3,5 +3,9 @@ export const plans = {
   anual: { name: "Plan anual", net: 22000, vat: 4180, total: 26180, months: 12, period: "año" },
 } as const;
 export type PlanId = keyof typeof plans;
+export const maxNfcQuantity = 100;
+export function isNfcQuantity(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= maxNfcQuantity;
+}
 export function isPlan(value: unknown): value is PlanId { return value === "mensual" || value === "anual"; }
 export function pesos(value: number) { return new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(value); }
