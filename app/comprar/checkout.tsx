@@ -6,8 +6,8 @@ import { plans, pesos, isNfcQuantity, maxNfcQuantity, type PlanId } from "@/lib/
 import type { CheckoutStatus } from "@/lib/checkout/mercadopago";
 import styles from "./page.module.css";
 
-export default function Checkout({ planId, resultPage = false, authenticated = true, initialQuantity = 1, purchaseId }: {
-  planId: PlanId; resultPage?: boolean; authenticated?: boolean; initialQuantity?: number; purchaseId?: string;
+export default function Checkout({ planId, resultPage = false, authenticated = true, initialQuantity = 1, purchaseId, mode }: {
+  planId: PlanId; resultPage?: boolean; authenticated?: boolean; initialQuantity?: number; purchaseId?: string; mode: "test" | "production";
 }) {
   const lock = useRef(false);
   const [status, setStatus] = useState<CheckoutStatus | null>(authenticated ? null : { state: "empty" });
@@ -28,8 +28,9 @@ export default function Checkout({ planId, resultPage = false, authenticated = t
   const net = (active || resultPage) && status?.totalAmount ? Math.round(total / 1.19) : plan.net * quantity;
   const returnPath = `/comprar?plan=${planId}&cantidad=${validQuantity ? quantity : 1}`;
   const endpoint = purchaseId ? `/api/checkout?compra=${encodeURIComponent(purchaseId)}` : "/api/checkout";
+  const isTest = (status?.mode ?? mode) === "test";
   const paymentTitles: Record<string, string> = {
-    approved: "Pago de prueba confirmado", rejected: "Pago rechazado",
+    approved: isTest ? "Pago de prueba confirmado" : "Pago confirmado", rejected: "Pago rechazado",
     cancelled: "Pago cancelado", refunded: "Pago devuelto", charged_back: "Pago con contracargo",
   };
 
@@ -81,7 +82,7 @@ export default function Checkout({ planId, resultPage = false, authenticated = t
     finally { lock.current = false; setBusy(false); }
   }
   async function cancel() {
-    if (lock.current) return;
+    if (lock.current || (!isTest && !window.confirm("¿Cancelar la renovación automática? Conservarás el acceso durante el período pagado. Esta acción no devuelve los pagos realizados."))) return;
     lock.current = true; setBusy(true); setError("");
     setStatus(previous => ({ ...previous, state: "creating", paymentStatus: "pending" }));
     try { setStatus(await send("cancel")); }
@@ -90,7 +91,7 @@ export default function Checkout({ planId, resultPage = false, authenticated = t
   }
 
   return <>
-    <p className="notice"><strong>Modo de prueba.</strong> En Mercado Pago usa el comprador y la tarjeta ficticios. Al aprobarse, se crearán los NFC de prueba en tu cuenta de TOCA. No se genera un envío.</p>
+    {isTest && <p className="notice"><strong>Modo de prueba.</strong> En Mercado Pago usa el comprador y la tarjeta ficticios. Al aprobarse, se crearán los NFC de prueba en tu cuenta de TOCA. No se genera un envío.</p>}
     {(!resultPage || status?.plan) && <section className="editor-card" aria-label="Resumen de compra">
       <h2>{plan.name}{validQuantity && <> · {quantity} NFC</>}</h2>
       {!resultPage && <div className={styles.quantity}>
@@ -123,28 +124,31 @@ export default function Checkout({ planId, resultPage = false, authenticated = t
       {error && <p className="form-error" role="alert">{error}</p>}
       {retrying && <p>Reintentaremos la consulta automáticamente. No se generará otro cobro.</p>}
       {status?.state === "creating" && <p>Estamos verificando la creación del checkout. Espera el resultado antes de repetir la compra.</p>}
-      {status?.state === "failed" && <p>No se creó la suscripción. Puedes iniciar otra prueba.</p>}
+      {status?.state === "failed" && <p>No se creó la suscripción. Puedes iniciar otra compra.</p>}
       {resultPage && status?.state === "empty" && <p>No encontramos una compra asociada a tu cuenta.</p>}
       {status?.subscriptionId && <div className={status.paymentStatus === "approved" ? "notice success" : "notice"}>
         <h2>{paymentTitles[status.paymentStatus ?? ""] ?? (status.state === "cancelled" ? "Suscripción cancelada" : "Esperando confirmación del pago")}</h2>
         {status.paymentStatus === "approved" && <p>Mercado Pago confirmó {pesos(status.totalAmount ?? confirmedPlan.total * confirmedQuantity)} por {confirmedQuantity} NFC ({confirmedPlan.name.toLowerCase()}).</p>}
-        {status.fulfilled && <p><strong>Tus {confirmedQuantity} NFC están listos.</strong> Se asignaron a tu cuenta con destino inicial https://example.com. Puedes configurar sus nombres y destinos en el panel.</p>}
-        {status.state === "cancelled" && <p>La suscripción de prueba está cancelada y no tendrá nuevas renovaciones.</p>}
+        {status.fulfilled && <p><strong>Tus {confirmedQuantity} NFC fueron asignados.</strong> Se asignaron a tu cuenta con destino inicial https://example.com. Puedes configurar sus nombres y destinos en el panel.</p>}
+        {!isTest && status.fulfilled && (status.billingBlocked ? <p>El servicio está suspendido por un contracargo.</p> : status.paidUntil ?
+          <p>Período pagado hasta {new Intl.DateTimeFormat("es-CL", { dateStyle: "long", timeStyle: "short", timeZone: "America/Santiago" }).format(new Date(status.paidUntil))}. El acceso requiere un período vigente.</p> :
+          <p>Esta compra no tiene un período pagado vigente. Revisa el estado del pago antes de volver a comprar.</p>)}
+        {status.state === "cancelled" && <p>La suscripción está cancelada y no tendrá nuevas renovaciones.</p>}
         {!terminal && <p>El resultado se actualiza automáticamente. Autorizar la suscripción no equivale a aprobar el pago.</p>}
         <small className={styles.reference}>Referencia: {status.reference}{status.paymentId && <><br />Pago: {status.paymentId}</>}</small>
       </div>}
       <div className={styles.actions}>
         {status?.fulfilled && <Link className="button button-primary" href="/panel">Configurar mis NFC</Link>}
         {authenticated && <Link className="button button-secondary" href="/cuenta/compras">Mis compras</Link>}
-        {status?.subscriptionId && status.state !== "cancelled" && <button className="button button-secondary" disabled={busy} onClick={cancel}>Cancelar suscripción de prueba</button>}
+        {status?.subscriptionId && status.state !== "cancelled" && <button className="button button-secondary" disabled={busy} onClick={cancel}>{isTest ? "Cancelar suscripción de prueba" : "Cancelar renovación"}</button>}
         <Link href="/precios" className="button button-secondary">Volver a los planes</Link>
       </div>
     </section>
-    <details className={styles.testing}>
+    {isTest && <details className={styles.testing}>
       <summary>Datos para probar el pago</summary>
       <p>Mastercard: <code>5416 7526 0258 2580</code><br />Vencimiento: <code>11/30</code> · CVV: <code>123</code><br />Titular: <code>APRO</code> · Documento: <strong>Otro</strong>, <code>123456789</code></p>
       <p>Correo: <code className={styles.reference}>test_user_8501473770136902242@testuser.com</code></p>
       <p>Puedes usar la sesión del comprador de prueba o pagar como invitado. No uses la cuenta del vendedor ni una cuenta real.</p>
-    </details>
+    </details>}
   </>;
 }

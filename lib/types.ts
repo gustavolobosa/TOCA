@@ -24,9 +24,12 @@ export type NfcLink = {
   updated_at: string;
   requires_configuration: boolean;
   is_test: boolean;
+  billing_expires_at?: string | null;
+  billing_blocked?: boolean;
 };
 
 export type NfcLinkSummary = NfcLink & {
+  billing_active?: boolean;
   total_taps: number;
   last_touched_at: string | null;
 };

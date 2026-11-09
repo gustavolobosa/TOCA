@@ -30,7 +30,7 @@ El repositorio incluye el MVP multiusuario. Su migración fue aplicada con autor
 
    El `project ref` aparece en la URL del proyecto y en **Project Settings → General**. `db push` sin `supabase link` muestra el error `Cannot find project ref`.
 
-4. En Supabase, abre **Authentication → Users** y copia el UUID de tu cuenta administradora a `ADMIN_USER_ID`. Usa una contraseña fuerte y exclusiva; nunca uses la contraseña de prueba ni compartas una cuenta. El MVP no ofrece registro público.
+4. En Supabase, abre **Authentication → Users** y copia el UUID de tu cuenta administradora a `ADMIN_USER_ID`. Usa una contraseña fuerte y exclusiva; nunca uses la contraseña de prueba ni compartas una cuenta. El registro público y las compras se habilitan con `TOCA_CHECKOUT_MODE`; consulta [la guía de checkout](docs/checkout.md).
 
 5. Inicia la aplicación:
 
@@ -81,6 +81,8 @@ WhatsApp con el plan elegido en el mensaje. No procesa pagos ni crea cuentas.
 - Las URLs públicas y privadas de Supabase deben apuntar al mismo proyecto.
 
 ## Configuración de producción
+
+Para aceptar pagos reales y aplicar la migración de vigencia de NFC, sigue [Registro y pagos de producción](docs/checkout.md).
 
 Para retirar MFA, aplica `20261027031251_remove_admin_mfa_requirement.sql` antes de publicar el código sin segundo factor. Conserva los controles de perfil y sesión en RLS. Retira también los factores del administrador desde Supabase Auth mediante el Dashboard o la API administrativa (no borres la cuenta ni edites tablas internas de Auth); eliminar un factor verificado cierra sus sesiones. Sin este paso, Supabase puede seguir exigiendo AAL2 al cambiar su contraseña. Esta operación no modifica contraseña, ID, NFC ni historial. No desactives MFA globalmente para otros proyectos o cuentas.
 

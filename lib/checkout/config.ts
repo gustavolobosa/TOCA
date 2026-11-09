@@ -2,9 +2,23 @@ import "server-only";
 
 export const testBuyerEmail = "test_user_8501473770136902242@testuser.com";
 export const testSellerId = "3828192200";
+export type CheckoutMode = "test" | "production";
+export function checkoutMode(): CheckoutMode | null {
+  const mode = process.env.TOCA_CHECKOUT_MODE;
+  return mode === "test" || mode === "production" ? mode : null;
+}
 
 export function checkoutEnabled() {
-  return process.env.TOCA_CHECKOUT_MODE === "test";
+  return checkoutMode() !== null;
+}
+
+export function sellerId(mode: CheckoutMode) {
+  const id = mode === "test" ? testSellerId : checkoutSecret("MERCADOPAGO_SELLER_ID");
+  if (!/^\d+$/.test(id) || (mode === "production" && id === testSellerId)) throw new CheckoutError("Configura el ID del vendedor real de Mercado Pago.", 503);
+  return id;
+}
+export function webhookSecret(mode: CheckoutMode) {
+  return checkoutSecret(mode === "test" ? "MERCADOPAGO_WEBHOOK_SECRET" : "MERCADOPAGO_PRODUCTION_WEBHOOK_SECRET");
 }
 
 export class CheckoutError extends Error {
@@ -16,7 +30,7 @@ export function checkoutSecret(name: string) {
   return value;
 }
 export function checkoutOrigin(host: string | null) {
-  if (!checkoutEnabled() || !host) throw new CheckoutError("Compra no disponible en este entorno.", 404);
+  if (!host) throw new CheckoutError("Compra no disponible en este entorno.", 404);
   if (process.env.NODE_ENV === "development" && !process.env.VERCEL && /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host)) return `http://${host}`;
   const allowed = [process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL];
   for (const name of ["CHECKOUT_BASE_URL", "NEXT_PUBLIC_SITE_URL"]) {

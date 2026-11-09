@@ -1,4 +1,4 @@
-import { CheckoutError, checkoutOrigin } from "@/lib/checkout/config";
+import { CheckoutError, checkoutOrigin, checkoutMode } from "@/lib/checkout/config";
 import { readSession, newSession } from "@/lib/checkout/session";
 import type { CheckoutPurchase } from "@/lib/checkout/session";
 import { checkoutAccount } from "@/lib/checkout/account";
@@ -21,7 +21,7 @@ async function handle(request: Request) {
       if (!purchase) throw new CheckoutError("Compra no encontrada.", 404);
       session = purchaseFromAttempt(purchase);
     } else if (!session) {
-      const latest = (await listAttempts(user.id))[0];
+      const latest = (await listAttempts(user.id)).find(item => item.mode === checkoutMode());
       if (latest) session = purchaseFromAttempt(latest);
     }
     if (request.method === "POST") {
@@ -32,13 +32,14 @@ async function handle(request: Request) {
       try { body = JSON.parse(raw); } catch { throw new CheckoutError("Solicitud inválida."); }
       if (!body || typeof body !== "object") throw new CheckoutError("Solicitud inválida.");
       if (body.action === "prepare") {
+        if (!checkoutMode()) throw new CheckoutError("Las compras nuevas están deshabilitadas.", 503);
         if (!isPlan(body.plan)) throw new CheckoutError("Selecciona un plan válido.");
         const quantity = body.quantity === undefined ? 1 : body.quantity;
         if (!isNfcQuantity(quantity)) throw new CheckoutError(`Selecciona una cantidad entera entre 1 y ${maxNfcQuantity} NFC.`);
         const attempt = session ? await getAttempt(session) : null;
         const changed = session && (session.plan !== body.plan || session.quantity !== quantity);
-        if (!session || attempt?.fulfilled_at || attempt?.state === "cancelled" || attempt?.state === "failed" || (!attempt && changed)) {
-          session = await newSession(body.plan, quantity, origin, user.id);
+        if (!session || session.mode !== checkoutMode() || attempt?.fulfilled_at || attempt?.state === "cancelled" || attempt?.state === "failed" || (!attempt && changed)) {
+          session = await newSession(body.plan, quantity, origin, user.id, user.email!);
         } else if (changed) {
           throw new CheckoutError("Tienes otra compra en curso. Revisa su resultado y cancélala antes de cambiar el plan o la cantidad.", 409);
         }

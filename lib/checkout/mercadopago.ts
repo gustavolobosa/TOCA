@@ -1,40 +1,59 @@
 import "server-only";
 import { plans } from "@/lib/pricing";
-import { CheckoutError, checkoutSecret, testBuyerEmail, testSellerId } from "./config";
+import { CheckoutError, checkoutMode, checkoutSecret, sellerId, testBuyerEmail, webhookSecret, type CheckoutMode } from "./config";
 import type { CheckoutPurchase } from "./session";
-import { claimAttempt, getAttempt, saveAttempt, findAttempt, purchaseFromAttempt, fulfillPurchase } from "./store";
+import { claimAttempt, getAttempt, saveAttempt, findAttempt, purchaseFromAttempt, fulfillPurchase, recordPayment } from "./store";
 
 type Subscription = {
   id: string; status: string; external_reference: string; collector_id: number; init_point: string;
   auto_recurring: { transaction_amount: number; currency_id: string; frequency: number; frequency_type: string };
 };
-type Payment = { id: number; status: string; status_detail: string; transaction_amount: number; currency_id: string; external_reference: string; collector_id: number; payer?: { email?: string } };
+type Payment = {
+  id: number; status: string; status_detail: string; transaction_amount: number; currency_id: string;
+  external_reference: string; collector_id: number; live_mode?: boolean; payer?: { email?: string };
+  transaction_amount_refunded?: number; date_last_updated: string;
+};
+type Invoice = { id: number; preapproval_id: string; debit_date: string; payment?: { id: number; status?: string } };
 class ProviderError extends CheckoutError {
   constructor(public providerStatus: number) { super("Mercado Pago no pudo responder. Verificaremos el intento sin repetir el cobro.", 502); }
 }
-async function mp<T>(path: string, body?: object, method = "POST"): Promise<T> {
-  const response = await fetch(`https://api.mercadopago.com${path}`, {
-    method: body ? method : "GET", cache: "no-store", signal: AbortSignal.timeout(10000),
-    headers: { Authorization: `Bearer ${checkoutSecret("MERCADOPAGO_TEST_ACCESS_TOKEN")}`, "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!response.ok) throw new ProviderError(response.status);
-  return response.json() as Promise<T>;
+function client(mode: CheckoutMode) {
+  const deadline = AbortSignal.timeout(45000);
+  return async function mp<T>(path: string, body?: object, method = "POST"): Promise<T> {
+    const response = await fetch(`https://api.mercadopago.com${path}`, {
+      method: body ? method : "GET", cache: "no-store", signal: AbortSignal.any([deadline, AbortSignal.timeout(8000)]),
+      headers: { Authorization: `Bearer ${checkoutSecret(mode === "test" ? "MERCADOPAGO_TEST_ACCESS_TOKEN" : "MERCADOPAGO_ACCESS_TOKEN")}`, "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!response.ok) throw new ProviderError(response.status);
+    return response.json() as Promise<T>;
+  };
 }
-async function verifySeller() {
+type Client = ReturnType<typeof client>;
+async function verifySeller(mode: CheckoutMode, mp: Client) {
   const seller = await mp<{ id: number; site_id: string; tags: string[] }>("/users/me");
-  if (String(seller.id) !== testSellerId || seller.site_id !== "MLC" || !seller.tags?.includes("test_user")) {
-    throw new CheckoutError("El modo de prueba solo admite el vendedor ficticio de TOCA.", 403);
+  if (String(seller.id) !== sellerId(mode) || seller.site_id !== "MLC" || !Array.isArray(seller.tags) ||
+      seller.tags.includes("test_user") !== (mode === "test")) {
+    throw new CheckoutError("Las credenciales de Mercado Pago no corresponden al vendedor y modo configurados.", 503);
   }
 }
-const reference = (session: CheckoutPurchase) => `TOCA-TEST-${session.id}`;
-function verifySubscription(subscription: Subscription, session: CheckoutPurchase) {
-  const plan = plans[session.plan];
-  if (subscription.external_reference !== reference(session) || String(subscription.collector_id) !== testSellerId ||
-      subscription.auto_recurring.transaction_amount !== session.totalAmount || subscription.auto_recurring.currency_id !== "CLP" ||
+const reference = (purchase: CheckoutPurchase) => `TOCA-${purchase.mode === "test" ? "TEST" : "LIVE"}-${purchase.id}`;
+function verifySubscription(subscription: Subscription, purchase: CheckoutPurchase) {
+  const plan = plans[purchase.plan];
+  if (subscription.external_reference !== reference(purchase) || String(subscription.collector_id) !== sellerId(purchase.mode) ||
+      subscription.auto_recurring?.transaction_amount !== purchase.totalAmount || subscription.auto_recurring.currency_id !== "CLP" ||
       subscription.auto_recurring.frequency !== plan.months || subscription.auto_recurring.frequency_type !== "months") {
     throw new CheckoutError("La suscripción no coincide con el plan comprado.", 403);
   }
+}
+function verifyPayment(payment: Payment, purchase: CheckoutPurchase) {
+  if (!Number.isSafeInteger(payment.id) || payment.id < 1 || payment.external_reference !== reference(purchase) ||
+      String(payment.collector_id) !== sellerId(purchase.mode) || payment.transaction_amount !== purchase.totalAmount || payment.currency_id !== "CLP" ||
+      (purchase.mode === "production" ? payment.live_mode !== true || !Number.isFinite(payment.transaction_amount_refunded) ||
+        !Number.isFinite(Date.parse(payment.date_last_updated)) : payment.payer?.email !== testBuyerEmail)) {
+    throw new CheckoutError("El pago no coincide con esta compra.", 403);
+  }
+  // El correo de la billetera puede diferir del de TOCA. El propietario es el usuario autenticado que creó la compra.
 }
 function checkoutUrl(subscription: Subscription) {
   const url = new URL(subscription.init_point);
@@ -44,106 +63,131 @@ function checkoutUrl(subscription: Subscription) {
   }
   return url.href;
 }
-async function findSubscription(session: CheckoutPurchase, id: string | null) {
+async function findSubscription(purchase: CheckoutPurchase, id: string | null, mp: Client) {
   if (!id) {
-    const search = await mp<{ results: Subscription[] }>(`/preapproval/search?external_reference=${reference(session)}`);
-    const found = search.results.filter(item => item.external_reference === reference(session));
+    const search = await mp<{ results: Subscription[] }>(`/preapproval/search?external_reference=${reference(purchase)}`);
+    const found = search.results.filter(item => item.external_reference === reference(purchase));
     if (found.length > 1) throw new CheckoutError("Hay más de una suscripción para este intento. No vuelvas a pagar; revisa el intento con el administrador.", 409);
     id = found[0]?.id;
   }
   if (!id) return null;
   const subscription = await mp<Subscription>(`/preapproval/${encodeURIComponent(id)}`);
-  verifySubscription(subscription, session);
+  verifySubscription(subscription, purchase);
   return subscription;
 }
-export async function startCheckout(session: CheckoutPurchase) {
-  await verifySeller();
-  if (!await claimAttempt(session)) return;
+export async function startCheckout(purchase: CheckoutPurchase) {
+  if (purchase.mode !== checkoutMode()) throw new CheckoutError("El modo de compra cambió. Vuelve a seleccionar tu plan.", 409);
+  const mp = client(purchase.mode);
+  // Una configuración incompleta falla antes de crear una suscripción cobrable.
+  webhookSecret(purchase.mode);
+  await verifySeller(purchase.mode, mp);
+  if (!await claimAttempt(purchase)) return;
   let created: Subscription;
   try {
-    const plan = plans[session.plan];
+    const plan = plans[purchase.plan];
     created = await mp<Subscription>("/preapproval", {
-      reason: `TOCA - ${plan.name} - ${session.quantity} NFC (IVA incluido) - Prueba`,
-      external_reference: reference(session), payer_email: testBuyerEmail, status: "pending",
-      auto_recurring: { frequency: plan.months, frequency_type: "months", transaction_amount: session.totalAmount, currency_id: "CLP" },
-      back_url: `${session.origin}/comprar/resultado/${session.id}`,
+      reason: `TOCA - ${plan.name} - ${purchase.quantity} NFC (IVA incluido)${purchase.mode === "test" ? " - Prueba" : ""}`,
+      external_reference: reference(purchase), payer_email: purchase.mode === "test" ? testBuyerEmail : purchase.buyerEmail, status: "pending",
+      auto_recurring: { frequency: plan.months, frequency_type: "months", transaction_amount: purchase.totalAmount, currency_id: "CLP" },
+      back_url: `${purchase.origin}/comprar/resultado/${purchase.id}`,
     });
   } catch (error) {
     if (error instanceof ProviderError && error.providerStatus === 400) {
-      await saveAttempt(session, { state: "failed" });
-      throw new CheckoutError("Mercado Pago rechazó la creación de la suscripción de prueba.");
+      await saveAttempt(purchase, { state: "failed" });
+      throw new CheckoutError("Mercado Pago rechazó la creación de la suscripción.");
     }
     // Un timeout puede ocurrir después de crear la suscripción: solo reconciliar, nunca repetir el POST.
     throw error;
   }
-  verifySubscription(created, session);
-  await saveAttempt(session, { subscription_id: created.id, state: "ready" });
+  verifySubscription(created, purchase);
+  await saveAttempt(purchase, { subscription_id: created.id, state: "ready" });
 }
-export async function checkoutStatus(session: CheckoutPurchase, notifiedPaymentId?: number): Promise<CheckoutStatus> {
-  const attempt = await getAttempt(session);
-  const base = { purchaseId: session.id, plan: session.plan, quantity: session.quantity, totalAmount: session.totalAmount, reference: reference(session) };
-  if (!attempt) return { ...base, state: "empty" as const };
-  if (attempt.state === "failed") return { ...base, state: "failed" as const };
-  const subscription = await findSubscription(session, attempt.subscription_id);
-  if (!subscription) return { ...base, state: "creating" as const };
-  const state = subscription.status === "cancelled" ? "cancelled" as const : "ready" as const;
-  if (attempt.subscription_id !== subscription.id || attempt.state !== state) {
-    await saveAttempt(session, { subscription_id: subscription.id, state });
+async function invoicesFor(subscriptionId: string, mp: Client, paymentId?: number) {
+  const invoices: Invoice[] = [];
+  for (let offset = 0; offset < 1000; offset += 100) {
+    const search = await mp<{ results: Invoice[]; paging?: { total: number } }>(
+      `/authorized_payments/search?preapproval_id=${encodeURIComponent(subscriptionId)}&limit=100&offset=${offset}${paymentId ? `&payment_id=${paymentId}` : ""}`);
+    invoices.push(...search.results);
+    if (search.results.length < 100 || (search.paging && offset + search.results.length >= search.paging.total)) return invoices;
   }
-  const invoices = await mp<{ results: { payment?: { id: number; status?: string } }[] }>(`/authorized_payments/search?preapproval_id=${subscription.id}`);
-  if (!attempt.fulfilled_at && notifiedPaymentId && !invoices.results.some(item => item.payment?.id === notifiedPaymentId)) {
-    throw new CheckoutError("El pago todavía no aparece asociado a la suscripción. Reintentaremos la verificación.", 503);
+  throw new CheckoutError("La suscripción requiere una revisión de su historial de pagos.", 503);
+}
+export async function checkoutStatus(purchase: CheckoutPurchase, notifiedPaymentId?: number, provider?: Client): Promise<CheckoutStatus> {
+  const attempt = await getAttempt(purchase);
+  const base = { purchaseId: purchase.id, mode: purchase.mode, plan: purchase.plan, quantity: purchase.quantity, totalAmount: purchase.totalAmount, reference: reference(purchase) };
+  if (!attempt) return { ...base, state: "empty" };
+  if (attempt.state === "failed") return { ...base, state: "failed" };
+  const mp = provider ?? client(purchase.mode);
+  await verifySeller(purchase.mode, mp);
+  const subscription = await findSubscription(purchase, attempt.subscription_id, mp);
+  if (!subscription) return { ...base, state: "creating" };
+  const state = ["cancelled", "canceled"].includes(subscription.status) ? "cancelled" : "ready";
+  if (attempt.subscription_id !== subscription.id || attempt.state !== state) await saveAttempt(purchase, { subscription_id: subscription.id, state });
+  const invoices = await invoicesFor(subscription.id, mp, notifiedPaymentId);
+  const ordered = invoices.filter(item => item.payment?.id).sort((a, b) => Date.parse(b.debit_date) - Date.parse(a.debit_date));
+  const selected = notifiedPaymentId ? [ordered.find(item => item.payment?.id === notifiedPaymentId)] :
+    [ordered[0], ordered.find(item => item.payment?.status === "approved")];
+  if (notifiedPaymentId && !selected[0]) throw new CheckoutError("El pago todavía no aparece asociado a la suscripción. Reintentaremos la verificación.", 503);
+  let latest: Payment | undefined;
+  const processed = new Set<number>();
+  for (const invoice of selected) {
+    if (!invoice?.payment?.id || processed.has(invoice.payment.id)) continue;
+    processed.add(invoice.payment.id);
+    // Comprobar también la pertenencia en el recurso individual; no confiar solo en el filtro de búsqueda.
+    const verifiedInvoice = await mp<Invoice>(`/authorized_payments/${invoice.id}`);
+    if (verifiedInvoice.preapproval_id !== subscription.id || verifiedInvoice.payment?.id !== invoice.payment.id) throw new CheckoutError("El pago no pertenece a esta suscripción.", 403);
+    const payment = await mp<Payment>(`/v1/payments/${invoice.payment.id}`);
+    verifyPayment(payment, purchase);
+    latest ??= payment;
+    if (purchase.mode === "production") await recordPayment(purchase, subscription.id, payment, verifiedInvoice);
+    else if (payment.status === "approved") await fulfillPurchase(purchase, subscription.id, payment.id);
   }
-  const candidate = invoices.results.find(item => item.payment?.status === "approved") ?? invoices.results.find(item => item.payment?.id);
-  const paymentId = notifiedPaymentId ?? (attempt.payment_id ? Number(attempt.payment_id) : candidate?.payment?.id);
-  const payment = paymentId ? await mp<Payment>(`/v1/payments/${paymentId}`) : null;
-  if (payment && (payment.external_reference !== reference(session) || String(payment.collector_id) !== testSellerId ||
-      payment.transaction_amount !== session.totalAmount || payment.currency_id !== "CLP" || payment.payer?.email !== testBuyerEmail)) {
-    throw new CheckoutError("El pago no coincide con esta compra de prueba.", 403);
-  }
-  if (payment?.status === "approved") await fulfillPurchase(session, subscription.id, payment.id);
-  return { ...base, state, fulfilled: Boolean(attempt.fulfilled_at) || payment?.status === "approved", subscriptionId: subscription.id, subscriptionStatus: subscription.status,
-    checkoutUrl: subscription.status === "pending" ? checkoutUrl(subscription) : undefined,
-    paymentId: payment?.id, paymentStatus: payment?.status ?? "pending", paymentDetail: payment?.status_detail };
+  const updated = await getAttempt(purchase);
+  return { ...base, state, fulfilled: Boolean(updated?.fulfilled_at), paidUntil: updated?.paid_until ?? undefined, billingBlocked: updated?.billing_blocked,
+    subscriptionId: subscription.id, subscriptionStatus: subscription.status,
+    checkoutUrl: subscription.status === "pending" && purchase.mode === checkoutMode() ? checkoutUrl(subscription) : undefined,
+    paymentId: latest?.id, paymentStatus: latest?.status ?? "pending", paymentDetail: latest?.status_detail };
 }
 export type CheckoutStatus = {
   state: "empty" | "creating" | "ready" | "failed" | "cancelled";
-  purchaseId?: string; fulfilled?: boolean; totalAmount?: number;
+  purchaseId?: string; fulfilled?: boolean; totalAmount?: number; mode?: CheckoutMode; paidUntil?: string; billingBlocked?: boolean;
   plan?: CheckoutPurchase["plan"]; quantity?: number; reference?: string; subscriptionId?: string; subscriptionStatus?: string;
   checkoutUrl?: string; paymentId?: number; paymentStatus?: string; paymentDetail?: string;
 };
-export async function cancelCheckout(session: CheckoutPurchase) {
-  await verifySeller();
-  const attempt = await getAttempt(session);
+export async function cancelCheckout(purchase: CheckoutPurchase) {
+  const mp = client(purchase.mode);
+  await verifySeller(purchase.mode, mp);
+  const attempt = await getAttempt(purchase);
   if (!attempt || attempt.state === "failed") return;
-  const subscription = await findSubscription(session, attempt.subscription_id);
+  const subscription = await findSubscription(purchase, attempt.subscription_id, mp);
   if (!subscription) throw new CheckoutError("Todavía verificamos la creación. Espera el resultado antes de iniciar otra compra.", 409);
-  if (subscription.status !== "cancelled") await mp(`/preapproval/${subscription.id}`, { status: "cancelled" }, "PUT");
-  await saveAttempt(session, { subscription_id: subscription.id, state: "cancelled" });
+  if (!["cancelled", "canceled"].includes(subscription.status)) await mp(`/preapproval/${subscription.id}`, { status: "cancelled" }, "PUT");
+  await saveAttempt(purchase, { subscription_id: subscription.id, state: "cancelled" });
 }
 
 // La notificación solo da una pista. La identidad, el importe y el estado se leen de la API.
-export async function reconcileNotification(topic: string, id: string) {
+export async function reconcileNotification(topic: string, id: string, mode: CheckoutMode) {
+  const mp = client(mode);
   let subscriptionId: string | undefined;
   let payment: Payment | undefined;
   if (topic === "subscription_preapproval") subscriptionId = id;
   else if (topic === "subscription_authorized_payment") {
-    const invoice = await mp<{ preapproval_id: string; payment?: { id: number } }>(`/authorized_payments/${encodeURIComponent(id)}`);
+    const invoice = await mp<Invoice>(`/authorized_payments/${encodeURIComponent(id)}`);
     subscriptionId = invoice.preapproval_id;
     if (invoice.payment?.id) payment = await mp<Payment>(`/v1/payments/${invoice.payment.id}`);
   } else if (topic === "payment") payment = await mp<Payment>(`/v1/payments/${encodeURIComponent(id)}`);
   else return;
   const subscription = subscriptionId ? await mp<Subscription>(`/preapproval/${encodeURIComponent(subscriptionId)}`) : null;
-  const externalReference = subscription?.external_reference ?? payment?.external_reference;
-  const match = /^TOCA-TEST-([a-f0-9-]{36})$/.exec(externalReference ?? "");
+  const match = /^TOCA-(TEST|LIVE)-([a-f0-9-]{36})$/.exec(subscription?.external_reference ?? payment?.external_reference ?? "");
   if (!match) return;
-  const attempt = await findAttempt(match[1]);
+  const attempt = await findAttempt(match[2]);
   if (!attempt?.user_id) return;
   const purchase = purchaseFromAttempt(attempt);
+  if (purchase.mode !== mode || (match[1] === "TEST") !== (mode === "test")) throw new CheckoutError("Modo de pago inconsistente.", 403);
   if (subscription) {
     verifySubscription(subscription, purchase);
     if (attempt.subscription_id && attempt.subscription_id !== subscription.id) throw new CheckoutError("Suscripción inconsistente.", 403);
   }
-  if (payment && (String(payment.collector_id) !== testSellerId || payment.external_reference !== reference(purchase))) throw new CheckoutError("Pago inconsistente.", 403);
-  await checkoutStatus(purchase, payment?.id);
+  if (payment) verifyPayment(payment, purchase);
+  await checkoutStatus(purchase, payment?.id, mp);
 }

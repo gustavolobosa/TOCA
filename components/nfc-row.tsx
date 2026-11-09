@@ -47,6 +47,7 @@ export function NfcRow({ link, owner, tocaUrl }: { link: NfcLinkSummary & { visi
     const result = await setNfcLinkActive(link.id, !link.is_active);
     return { ...result, success: result.error ? "" : link.is_active ? "NFC pausado." : "NFC activado." };
   }, { error: "", success: "" });
+  const unpaid = link.billing_blocked || link.billing_active === false;
   function showHistory() { setOpen(true); setTab("history"); }
   return <article className="nfc-item" aria-label={link.name}>
     <div className="nfc-row">
@@ -55,13 +56,13 @@ export function NfcRow({ link, owner, tocaUrl }: { link: NfcLinkSummary & { visi
       </button></h3>
       <p className="nfc-destination"><span className="mobile-label">Destino actual</span>{destinationSummary(link)}</p>
       <p className="nfc-visits"><span className="mobile-label">Visitas del mes</span><span aria-label={`${link.visits} visitas en el mes`}>{String(link.visits).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}</span></p>
-      <p className={`nfc-state ${link.is_active ? "" : "is-paused"}`}>{link.is_active ? "Activo" : "Pausado"}</p>
+      <p className={`nfc-state ${link.is_active && !unpaid ? "" : "is-paused"}`}>{unpaid ? "Sin vigencia de pago" : link.is_active ? "Activo" : "Pausado"}</p>
       <div className="nfc-actions">
         <CopyButton value={tocaUrl} />
         <DisclosureMenu label={`Acciones de ${link.name}`} trigger={<Icon name="more" />}>
           <Link href={`/panel/${link.id}/editar`}>Editar</Link>
           <button type="button" onClick={showHistory}>Ver historial</button>
-          <form action={toggle} className="menu-separator"><button type="submit" disabled={pending} aria-busy={pending}>
+          <form action={toggle} className="menu-separator"><button type="submit" disabled={pending || Boolean(unpaid)} aria-busy={pending}>
             {pending && <span className="spinner" aria-hidden="true" />}{link.is_active ? "Pausar NFC" : "Activar NFC"}
           </button></form>
         </DisclosureMenu>

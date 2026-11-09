@@ -41,6 +41,7 @@ export default async function EditLinkPage({ params, searchParams }: EditLinkPag
           {link.requires_configuration && <p className="notice">Este NFC tiene una configuración pendiente. Configura un destino nuevo antes de activarlo.</p>}
           <DestinationFields type={link.destination_type} url={link.destination_url} />
           <label className="checkbox-label"><input type="checkbox" name="is_active" defaultChecked={link.is_active} />NFC activo</label>
+          {link.billing_expires_at && <p className="muted">Este NFC también requiere un período pagado vigente. Puedes revisarlo en <Link href="/cuenta/compras">Mis compras</Link>.</p>}
           <div className="form-actions">
             <Link className="button button-secondary" href="/panel">Cancelar</Link>
             <SubmitButton pendingLabel="Guardando…">Guardar cambios</SubmitButton>
