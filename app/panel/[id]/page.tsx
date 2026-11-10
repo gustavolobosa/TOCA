@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { VisitsRealtime } from "@/components/visits-realtime";
 import { getNfc } from "@/lib/data";
 import { requirePanelAccount } from "@/lib/auth";
 import { destinationLabel } from "@/lib/destinations";
@@ -29,6 +30,7 @@ export default async function NfcHistoryPage({ params, searchParams }: {
   const dailyRows = (daily.data ?? []) as { day: string; destination_type: EventDestinationType; visits: number }[];
   const historyUrl = (v: number, h: number) => `/panel/${id}?visits_page=${v}&history_page=${h}`;
   return <main className="panel-main" id="main-content">
+    <VisitsRealtime key={id} nfcId={id} />
     <Link className="back-link" href="/panel">Volver al panel</Link>
     <section className="panel-heading"><div><h1>{link.name}</h1><p className="muted">{visits.count ?? 0} visitas registradas. Consulta los destinos y las visitas de este NFC.</p></div>
       <Link className="button button-primary" href={`/panel/${id}/editar`}>Editar destino</Link></section>

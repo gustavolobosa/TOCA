@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { TrafficChart } from "@/components/traffic-chart";
 import { NfcRow } from "@/components/nfc-row";
+import { VisitsRealtime } from "@/components/visits-realtime";
 import { requirePanelAccount } from "@/lib/auth";
 import { getProfiles } from "@/lib/data";
 import { getTraffic } from "@/lib/traffic";
@@ -21,6 +22,7 @@ export default async function DashboardPage({ searchParams }: {
   const siteUrl = getSiteUrl();
   const pageUrl = (value: number) => `/panel?page=${value}`;
   return <main className="panel-main" id="main-content">
+    <VisitsRealtime />
     <TrafficChart data={data} />
     <p><Link href="/cuenta/compras">Mis compras</Link> · <Link href="/precios">Comprar NFC</Link></p>
     <section className="nfc-section" aria-labelledby="nfc-title">
