@@ -6,6 +6,7 @@ import { claimAttempt, getAttempt, saveAttempt, findAttempt, purchaseFromAttempt
 
 type Subscription = {
   id: string; status: string; external_reference: string; collector_id: number; init_point: string;
+  next_payment_date?: string;
   auto_recurring: { transaction_amount: number; currency_id: string; frequency: number; frequency_type: string };
 };
 type Payment = {
@@ -74,6 +75,19 @@ async function findSubscription(purchase: CheckoutPurchase, id: string | null, m
   const subscription = await mp<Subscription>(`/preapproval/${encodeURIComponent(id)}`);
   verifySubscription(subscription, purchase);
   return subscription;
+}
+
+// Vista de billing: consultar no crea pagos ni modifica la base de datos.
+export async function billingSubscription(purchase: CheckoutPurchase, subscriptionId: string | null) {
+  const mp = client(purchase.mode);
+  await verifySeller(purchase.mode, mp);
+  const subscription = await findSubscription(purchase, subscriptionId, mp);
+  if (!subscription) return null;
+  return {
+    status: subscription.status,
+    nextPaymentDate: subscription.status === "authorized" && subscription.next_payment_date && Number.isFinite(Date.parse(subscription.next_payment_date))
+      ? subscription.next_payment_date : null,
+  };
 }
 export async function startCheckout(purchase: CheckoutPurchase) {
   if (purchase.mode !== checkoutMode()) throw new CheckoutError("El modo de compra cambió. Vuelve a seleccionar tu plan.", 409);
@@ -167,7 +181,11 @@ export async function cancelCheckout(purchase: CheckoutPurchase) {
   if (!attempt || attempt.state === "failed") return;
   const subscription = await findSubscription(purchase, attempt.subscription_id, mp);
   if (!subscription) throw new CheckoutError("Todavía verificamos la creación. Espera el resultado antes de iniciar otra compra.", 409);
-  if (!["cancelled", "canceled"].includes(subscription.status)) await mp(`/preapproval/${subscription.id}`, { status: "cancelled" }, "PUT");
+  if (!["cancelled", "canceled"].includes(subscription.status)) {
+    const cancelled = await mp<Subscription>(`/preapproval/${subscription.id}`, { status: "cancelled" }, "PUT");
+    verifySubscription(cancelled, purchase);
+    if (!["cancelled", "canceled"].includes(cancelled.status)) throw new CheckoutError("Mercado Pago todavía no confirmó la cancelación. Vuelve a consultar el estado.", 503);
+  }
   await saveAttempt(purchase, { subscription_id: subscription.id, state: "cancelled" });
 }
 

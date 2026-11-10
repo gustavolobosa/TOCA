@@ -1,0 +1,3 @@
+.results { display: grid; gap: 16px; margin-top: 24px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.id { overflow-wrap: anywhere; }

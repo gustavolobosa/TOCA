@@ -284,7 +284,7 @@ td, th { padding: 12px; border-bottom: 1px solid var(--line); }
   .panel-shell { padding-left: 0; }
   .sidebar { position: relative; inset: auto; width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px 20px; border-right: 0; border-bottom: 1px solid var(--line); }
   .sidebar > .wordmark { margin: 0; font-size: 25px; }
-  .sidebar-nav { display: flex; order: 3; width: 100%; }
+  .sidebar-nav { display: flex; flex-wrap: wrap; order: 3; width: 100%; }
   .sidebar-nav a { padding: 8px 14px; min-height: 40px; }
   .account-menu { margin-top: 0; margin-left: auto; }
   .account-name { max-width: 120px; }
