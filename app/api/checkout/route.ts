@@ -53,7 +53,7 @@ async function handle(request: Request) {
           throw new CheckoutError("Tienes otra compra en curso. Revisa su resultado y cancélala antes de cambiar el plan, la cantidad o el código.", 409);
         }
         if (body.expectedTotal !== session.totalAmount) throw new CheckoutError("El total no coincide con tu compra. Recarga la página antes de pagar.", 409);
-        return Response.json({ plan: session.plan, quantity: session.quantity, totalAmount: session.totalAmount, unitNet: session.unitNet, promoCode: session.promoCode }, { headers });
+        return Response.json({ purchaseId: session.id, plan: session.plan, quantity: session.quantity, totalAmount: session.totalAmount, unitNet: session.unitNet, promoCode: session.promoCode }, { headers });
       }
       if (!session) throw new CheckoutError("Inicia la compra desde la página de precios.", 401);
       if (body.action === "pay") {

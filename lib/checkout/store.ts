@@ -9,11 +9,12 @@ export type Attempt = {
   id: string; plan: string; quantity: number; user_id: string | null; origin: string | null;
   total_amount: number | null; payment_id: string | null; fulfilled_at: string | null;
   subscription_id: string | null; state: "creating" | "ready" | "failed" | "cancelled"; created_at: string;
+  renewal_status: string | null; next_payment_at: string | null;
   mode: CheckoutMode; buyer_email: string | null; paid_until: string | null; billing_blocked: boolean;
   promo_id: string | null; promo_code: string | null; unit_net: number | null;
   promo_state: "reserved" | "consumed" | "released" | null; promo_expires_at: string | null; promo_cancelled_at: string | null;
 };
-const columns = "id,plan,quantity,user_id,origin,total_amount,payment_id,fulfilled_at,subscription_id,state,created_at,mode,buyer_email,paid_until,billing_blocked,promo_id,promo_code,unit_net,promo_state,promo_expires_at,promo_cancelled_at";
+const columns = "id,plan,quantity,user_id,origin,total_amount,payment_id,fulfilled_at,subscription_id,state,created_at,mode,renewal_status,next_payment_at,buyer_email,paid_until,billing_blocked,promo_id,promo_code,unit_net,promo_state,promo_expires_at,promo_cancelled_at";
 const storageError = () => new CheckoutError("No se pudo acceder a tus compras. Revisa las variables y la migración de Supabase.", 503);
 function db() {
   try { return createSupabaseServiceClient(); } catch { throw storageError(); }
@@ -58,10 +59,14 @@ export async function claimAttempt(purchase: CheckoutPurchase) {
   if (error) throw storageError();
   return true;
 }
-export async function saveAttempt(purchase: CheckoutPurchase, values: Pick<Attempt, "state"> & Partial<Pick<Attempt, "subscription_id">>) {
-  const { data, error } = await db().from("checkout_test_attempts").update(values).eq("id", purchase.id).eq("user_id", purchase.userId)
-    .eq("plan", purchase.plan).eq("quantity", purchase.quantity).select("id").single();
-  if (error || !data) throw storageError();
+export async function saveAttempt(purchase: CheckoutPurchase, values: Pick<Attempt, "state"> & Partial<Pick<Attempt, "subscription_id" | "renewal_status" | "next_payment_at">>) {
+  let query = db().from("checkout_test_attempts").update(values).eq("id", purchase.id).eq("user_id", purchase.userId)
+    .eq("plan", purchase.plan).eq("quantity", purchase.quantity);
+  // Una lectura anterior a la cancelación puede terminar después que ella.
+  if (values.state !== "cancelled") query = query.neq("state", "cancelled");
+  const { data, error } = await query.select("id").maybeSingle();
+  if (error) throw storageError();
+  if (!data && (await getAttempt(purchase))?.state !== "cancelled") throw storageError();
 }
 export async function fulfillPurchase(purchase: CheckoutPurchase, subscriptionId: string, paymentId: number) {
   if (purchase.mode !== "test") throw new CheckoutError("Compra de prueba requerida.", 403);
@@ -73,13 +78,14 @@ export async function fulfillPurchase(purchase: CheckoutPurchase, subscriptionId
 }
 
 export async function recordPayment(purchase: CheckoutPurchase, subscriptionId: string, payment: {
-  id: number; status: string; transaction_amount_refunded?: number; date_last_updated: string;
+  id: number; status: string; transaction_amount_refunded?: number; date_last_updated: string; date_approved?: string | null; payment_method_id?: string | null;
 }, invoice: { id: number; debit_date: string }) {
-  const { data, error } = await db().rpc("reconcile_checkout_payment", {
+  const { data, error } = await db().rpc("record_billing_payment", {
     purchase_id: purchase.id, provider_subscription: subscriptionId, provider_payment: String(payment.id),
     provider_invoice: String(invoice.id), paid_amount: purchase.totalAmount, paid_currency: "CLP",
     payment_status: payment.status, refunded_amount: payment.transaction_amount_refunded ?? 0,
     provider_updated: payment.date_last_updated, cycle_start: invoice.debit_date,
+    approved_at: payment.date_approved ?? null, payment_method: payment.payment_method_id ?? null,
   });
   if (error || data !== purchase.quantity) throw new CheckoutError("Estamos verificando la vigencia de tus NFC. Reintentaremos sin volver a cobrar.", 503);
 }

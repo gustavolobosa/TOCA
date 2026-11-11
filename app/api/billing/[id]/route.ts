@@ -27,7 +27,9 @@ async function handle(request: Request, context: { params: Promise<{ id: string 
     let page: number;
     try { page = parsePage(new URL(request.url).searchParams.get("page") ?? undefined); }
     catch { throw new CheckoutError("Página inválida."); }
-    const history = await billingPayments(attempt, page);
+    const history = new URL(request.url).searchParams.get("resumen") === "1"
+      ? { payments: [], paymentCount: 0, paymentPage: 0 }
+      : await billingPayments(attempt, page);
     let providerStatus: string | null = null, nextPaymentDate: string | null = null, warning: string | null = null;
     if (attempt.state !== "failed") {
       try {

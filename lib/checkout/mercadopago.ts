@@ -12,7 +12,7 @@ type Subscription = {
 type Payment = {
   id: number; status: string; status_detail: string; transaction_amount: number; currency_id: string;
   external_reference: string; collector_id: number; live_mode?: boolean; payer?: { email?: string };
-  transaction_amount_refunded?: number; date_last_updated: string;
+  transaction_amount_refunded?: number; date_last_updated: string; date_approved?: string | null; payment_method_id?: string | null;
 };
 type Invoice = { id: number; preapproval_id: string; debit_date: string; status?: string; payment?: { id: number; status?: string } };
 class ProviderError extends CheckoutError {
@@ -83,11 +83,20 @@ export async function billingSubscription(purchase: CheckoutPurchase, subscripti
   await verifySeller(purchase.mode, mp);
   const subscription = await findSubscription(purchase, subscriptionId, mp);
   if (!subscription) return null;
-  return {
-    status: subscription.status,
-    nextPaymentDate: subscription.status === "authorized" && subscription.next_payment_date && Number.isFinite(Date.parse(subscription.next_payment_date))
-      ? subscription.next_payment_date : null,
-  };
+  return { status: subscription.status, nextPaymentDate: renewalFields(subscription).next_payment_at };
+}
+function renewalFields(subscription: Subscription) {
+  const date = subscription.next_payment_date;
+  return { renewal_status: subscription.status, next_payment_at:
+    subscription.status === "authorized" && date && Number.isFinite(Date.parse(date)) ? new Date(date).toISOString() : null };
+}
+
+// Solo después de comprobar en la base de datos que el pago pertenece a la compra del titular.
+export async function receiptPayment(purchase: CheckoutPurchase, id: string) {
+  const payment = await client(purchase.mode)<Payment>(`/v1/payments/${encodeURIComponent(id)}`);
+  verifyPayment(payment, purchase);
+  if (String(payment.id) !== id) throw new CheckoutError("El pago no coincide con la operación solicitada.", 409);
+  return payment;
 }
 export async function startCheckout(purchase: CheckoutPurchase) {
   if (purchase.mode !== checkoutMode()) throw new CheckoutError("El modo de compra cambió. Vuelve a seleccionar tu plan.", 409);
@@ -114,7 +123,7 @@ export async function startCheckout(purchase: CheckoutPurchase) {
     throw error;
   }
   verifySubscription(created, purchase);
-  await saveAttempt(purchase, { subscription_id: created.id, state: "ready" });
+  await saveAttempt(purchase, { subscription_id: created.id, state: "ready", ...renewalFields(created) });
 }
 async function invoicesFor(subscriptionId: string, mp: Client, paymentId?: number) {
   const invoices: Invoice[] = [];
@@ -138,7 +147,11 @@ export async function checkoutStatus(purchase: CheckoutPurchase, notifiedPayment
   const subscription = await findSubscription(purchase, attempt.subscription_id, mp);
   if (!subscription) return { ...base, state: "creating" };
   const state = ["cancelled", "canceled"].includes(subscription.status) ? "cancelled" : "ready";
-  if (attempt.subscription_id !== subscription.id || attempt.state !== state) await saveAttempt(purchase, { subscription_id: subscription.id, state });
+  const renewal = renewalFields(subscription);
+  if (attempt.subscription_id !== subscription.id || attempt.state !== state || attempt.renewal_status !== renewal.renewal_status ||
+    (attempt.next_payment_at ? Date.parse(attempt.next_payment_at) : null) !== (renewal.next_payment_at ? Date.parse(renewal.next_payment_at) : null)) {
+    await saveAttempt(purchase, { subscription_id: subscription.id, state, ...renewal });
+  }
   const invoices = await invoicesFor(subscription.id, mp, notifiedPaymentId);
   const ordered = invoices.filter(item => item.payment?.id).sort((a, b) => Date.parse(b.debit_date) - Date.parse(a.debit_date));
   const selected = notifiedPaymentId ? [ordered.find(item => item.payment?.id === notifiedPaymentId)] : purchase.promoId && attempt.promo_state === "reserved" ? ordered :
@@ -186,7 +199,7 @@ export async function cancelCheckout(purchase: CheckoutPurchase) {
     verifySubscription(cancelled, purchase);
     if (!["cancelled", "canceled"].includes(cancelled.status)) throw new CheckoutError("Mercado Pago todavía no confirmó la cancelación. Vuelve a consultar el estado.", 503);
   }
-  await saveAttempt(purchase, { subscription_id: subscription.id, state: "cancelled" });
+  await saveAttempt(purchase, { subscription_id: subscription.id, state: "cancelled", renewal_status: "cancelled", next_payment_at: null });
 }
 
 // No liberar por tiempo solamente: un checkout externo puede seguir siendo cobrable.
@@ -203,7 +216,7 @@ export async function cleanupPromotion(purchase: CheckoutPurchase) {
     subscription = await findSubscription(purchase, subscription.id, mp);
   }
   if (!subscription || !["cancelled", "canceled"].includes(subscription.status)) return;
-  await saveAttempt(purchase, { subscription_id: subscription.id, state: "cancelled" });
+  await saveAttempt(purchase, { subscription_id: subscription.id, state: "cancelled", renewal_status: "cancelled", next_payment_at: null });
   attempt = await getAttempt(purchase);
   if (!attempt?.promo_cancelled_at || Date.parse(attempt.promo_cancelled_at) > Date.now() - 86400000) return;
   // Reconciliar otra vez después de confirmar la cancelación y esperar la ventana de seguridad.
